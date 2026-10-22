@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Reckon</string>
+	<key>CFBundleDisplayName</key>
+	<string>Reckon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.reckon.mac</string>
+	<key>CFBundleExecutable</key>
+	<string>Reckon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<!-- LSUIElement = true: no Dock icon, no app menu. Reckon lives in the menu bar only. -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- Shown by macOS when Reckon asks for calendar access (macOS 14+ key). -->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Reckon reads today's calendar events so you can turn them into commitments.</string>
+	<!-- Older key, kept so the prompt text also appears on systems that look for it. -->
+	<key>NSCalendarsUsageDescription</key>
+	<string>Reckon reads today's calendar events so you can turn them into commitments.</string>
+	<!-- Shown when Reckon first uses AppleScript (used from Phase 2 to mute audio). -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Reckon uses AppleScript to mute and restore your audio when a commitment starts, and to check which browser tab you're on during a session.</string>
+</dict>
+</plist>

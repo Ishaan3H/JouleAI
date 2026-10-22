@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- No App Sandbox on purpose (we need to watch the frontmost app, run AppleScript
+	     and the `shortcuts` command). Hardened Runtime is switched on at signing time
+	     by the codesign "options runtime" flag in scripts/build-app.sh. -->
+
+	<!-- Allows Reckon to send Apple Events (AppleScript) under the Hardened Runtime. -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+
+	<!-- Allows calendar access under the Hardened Runtime. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+</dict>
+</plist>
