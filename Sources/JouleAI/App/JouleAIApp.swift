@@ -1,0 +1,60 @@
+import SwiftUI
+
+/// The app's entry point. `@main` tells Swift to start the program here.
+///
+/// JouleAI has no normal windows at launch: it only puts an icon in the menu bar.
+/// Clicking the icon shows `PopoverView` in a small panel (that's what
+/// `.menuBarExtraStyle(.window)` does — without it you'd get a plain menu).
+@main
+struct JouleAIApp: App {
+
+    /// Created once when the app launches and shared with every view.
+    /// `@State` keeps them alive for as long as the app runs.
+    @State private var appState: AppState
+    @State private var coordinator: SessionCoordinator
+
+    /// The coordinator needs the app state, so both are created here, in order.
+    /// (`_appState` is the underlying storage behind the `@State` property.)
+    init() {
+        LegacyMigration.run()            // bring over data and settings from the old "Reckon" name
+        AppSettings.registerDefaults()   // fill in default settings before anything reads them
+
+        // `--snapshots <folder>`: render the screens to images and quit (design review).
+        if let folder = SnapshotRenderer.requestedDirectory {
+            SnapshotRenderer.renderAll(to: folder)
+            exit(0)
+        }
+
+        let state = AppState()
+        _appState = State(initialValue: state)
+        _coordinator = State(initialValue: SessionCoordinator(appState: state))
+    }
+
+    var body: some Scene {
+        MenuBarExtra {
+            PopoverView()
+                .environment(appState)      // makes appState available to all child views
+                .environment(coordinator)
+        } label: {
+            MenuBarLabel(coordinator: coordinator)
+        }
+        .menuBarExtraStyle(.window)
+    }
+}
+
+/// What appears in the menu bar: the ✓ icon normally, or the time left
+/// (e.g. "23:10") while a session is running.
+private struct MenuBarLabel: View {
+    let coordinator: SessionCoordinator
+
+    var body: some View {
+        if let remaining = coordinator.remainingText {
+            Text(remaining).monospacedDigit()
+        } else if let untilStart = coordinator.upcomingText {
+            // Counting down to the next session, e.g. "in 12:34".
+            Text("in \(untilStart)").monospacedDigit()
+        } else {
+            Image(systemName: "checkmark.circle")
+        }
+    }
+}
