@@ -20,6 +20,8 @@ struct JouleAIEvent: Codable {
         case started             // Start pressed
         case brokeOut            // ended early with the typed phrase
         case completed           // the timer ran out
+        case reflected           // answered the end-of-session window
+        case reflectionSkipped   // closed it without answering
     }
 
     var timestamp: Date

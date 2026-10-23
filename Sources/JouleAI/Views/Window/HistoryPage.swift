@@ -53,7 +53,7 @@ struct HistoryView: View {
     // MARK: - Counts
 
     private var stats: some View {
-        let kept = recent.filter { Outcome(session: $0) == .kept }.count
+        let kept = recent.filter { Outcome(session: $0).isKept }.count
         let skipped = recent.filter { Outcome(session: $0) == .skipped }.count
         let broken = recent.filter { Outcome(session: $0) == .broke }.count
         return HStack(spacing: Theme.Space.m) {
@@ -104,10 +104,19 @@ struct HistoryView: View {
                 .font(Theme.Font.detail.monospacedDigit())
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 64, alignment: .leading)
-            Text(session.commitmentTitle)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.commitmentTitle)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                // The "where I left off" note, if one was written.
+                if let note = session.leftOffNote, !note.isEmpty {
+                    Text(note)
+                        .font(Theme.Font.detail)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(2)
+                }
+            }
             Spacer()
             Text(outcome.label)
                 .font(Theme.Font.label)
@@ -127,21 +136,30 @@ struct HistoryView: View {
         return day.formatted(.dateTime.weekday(.wide).day().month(.wide))
     }
 
-    /// How a session is shown in history.
+    /// How a session is shown in history. "Kept" means you sat the whole
+    /// session; Done / Partly / Didn't is how you said it went.
     private enum Outcome {
-        case kept, skipped, broke, inProgress
+        case done, partly, didnt, keptUnrated, skipped, broke, inProgress
 
         init(session: Session) {
             switch session.outcome {
+            case .done: self = .done
+            case .partly: self = .partly
+            case .didnt: self = .didnt
             case .skipped: self = .skipped
             case .brokeEarly: self = .broke
-            default: self = session.endedAt == nil ? .inProgress : .kept
+            case nil: self = session.endedAt == nil ? .inProgress : .keptUnrated
             }
         }
 
+        var isKept: Bool { [.done, .partly, .didnt, .keptUnrated].contains(self) }
+
         var label: String {
             switch self {
-            case .kept: return "KEPT"
+            case .done: return "DONE"
+            case .partly: return "PARTLY"
+            case .didnt: return "DIDN’T"
+            case .keptUnrated: return "KEPT"
             case .skipped: return "SKIPPED"
             case .broke: return "BROKE EARLY"
             case .inProgress: return "IN PROGRESS"
@@ -150,10 +168,10 @@ struct HistoryView: View {
 
         var color: Color {
             switch self {
-            case .kept: return Theme.accent
-            case .skipped: return Theme.textSecondary
+            case .done, .keptUnrated: return Theme.accent
+            case .partly, .inProgress: return Theme.warning
+            case .didnt, .skipped: return Theme.textSecondary
             case .broke: return Theme.danger
-            case .inProgress: return Theme.warning
             }
         }
     }

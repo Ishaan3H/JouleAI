@@ -13,7 +13,11 @@ struct PopoverView: View {
     var body: some View {
         NextUpView(model: model, actions: actions)
             // Refresh every time the popover appears, so the list is never stale.
-            .onAppear { appState.refresh() }
+            .onAppear {
+                appState.refresh()
+                // A skipped "Where did you leave off?" comes back once, here.
+                coordinator.offerPendingReflection()
+            }
     }
 
     // MARK: - Model

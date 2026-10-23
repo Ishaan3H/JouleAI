@@ -3,8 +3,8 @@ import Foundation
 /// A record of one time a commitment fired: whether you did it, skipped it, or
 /// broke it early, plus the "where I left off" note.
 ///
-/// Defined now so the data model is complete; sessions are created and saved
-/// from Phase 2 onward.
+/// When a session ends, the end-of-session window fills in `outcome`
+/// (Done / Partly / Didn't) and `leftOffNote`.
 struct Session: Codable, Identifiable, Hashable {
 
     enum Outcome: String, Codable {
@@ -24,4 +24,10 @@ struct Session: Codable, Identifiable, Hashable {
     var outcome: Outcome?
     var leftOffNote: String?
     var breakReason: String?
+
+    /// Set when the end-of-session window was closed without answering.
+    /// The window then comes back once, the next time the popover opens.
+    var reflectionSkippedAt: Date?
+    /// Set when that one re-ask has happened, so it never nags twice.
+    var reflectionReaskedAt: Date?
 }

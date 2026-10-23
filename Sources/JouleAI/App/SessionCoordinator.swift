@@ -68,6 +68,7 @@ final class SessionCoordinator {
     @ObservationIgnored private let overlay = OverlayController()
     @ObservationIgnored private let audio = AudioMuter()
     @ObservationIgnored private let noise = BrownNoisePlayer()
+    @ObservationIgnored private let endWindow = EndOfSessionWindowController()
     @ObservationIgnored private let notifier = Notifier()
     @ObservationIgnored private var scheduler: Scheduler?
     /// Ticks every second for the countdowns (session time left, time until next).
@@ -454,17 +455,20 @@ final class SessionCoordinator {
 
     // MARK: - 4. Ending
 
-    /// Stops everything and records how the session ended.
+    /// Stops everything, records how the session ended, turns Focus off, and
+    /// opens the end-of-session window.
     ///
-    /// `outcome` is `nil` when time simply ran out: Phase 4 adds the window that
-    /// asks Done / Partly / Didn't and "Where did you leave off?", and runs the
-    /// Focus-off shortcut.
+    /// `outcome` is `nil` when time simply ran out (the window then asks
+    /// Done / Partly / Didn't), or `.brokeEarly` after the End-early flow.
     private func finishSession(outcome: Session.Outcome?, breakReason: String?) {
         guard var active = activeSession else { return }
 
         stopLock()
         overlay.hide()
         noise.stop()
+        if AppSettings.focusEnabled {
+            runShortcut(AppSettings.focusOffShortcut)
+        }
 
         active.session.endedAt = Date()
         active.session.outcome = outcome
@@ -479,7 +483,62 @@ final class SessionCoordinator {
 
         activeSession = nil
         remainingSeconds = 0
+        askForReflection(active.session, commitment: active.commitment, isTest: active.isTest)
         checkForDueCommitment()
+    }
+
+    // MARK: - 5. Reflection ("Where did you leave off?")
+
+    /// Opens the end-of-session window for a finished session.
+    private func askForReflection(_ session: Session, commitment: Commitment, isTest: Bool) {
+        endWindow.show(
+            title: session.commitmentTitle,
+            endedEarly: session.outcome == .brokeEarly,
+            onSave: { [weak self] outcome, note in
+                self?.saveReflection(sessionID: session.id, commitment: commitment,
+                                     outcome: outcome, note: note, isTest: isTest)
+            },
+            onSkip: { [weak self] in
+                self?.skipReflection(sessionID: session.id, commitment: commitment, isTest: isTest)
+            }
+        )
+    }
+
+    /// Save: record the outcome (unless it ended early) and the note.
+    private func saveReflection(sessionID: Session.ID, commitment: Commitment,
+                                outcome: Session.Outcome?, note: String, isTest: Bool) {
+        let detail = [outcome.map { "\($0.rawValue)" }, note.isEmpty ? nil : "note: \(note)"]
+            .compactMap { $0 }.joined(separator: " · ")
+        EventLog.record(.reflected, commitment, detail: detail.isEmpty ? nil : detail, isTest: isTest)
+
+        guard !isTest, var session = appState.session(withID: sessionID) else { return }
+        if let outcome { session.outcome = outcome }
+        session.leftOffNote = note.isEmpty ? nil : note
+        appState.saveSession(session)
+    }
+
+    /// Skip (or the window was closed): leave it unrecorded. The first time,
+    /// remember it so the window can come back once from the popover.
+    private func skipReflection(sessionID: Session.ID, commitment: Commitment, isTest: Bool) {
+        EventLog.record(.reflectionSkipped, commitment, isTest: isTest)
+        guard !isTest, var session = appState.session(withID: sessionID) else { return }
+        if session.reflectionSkippedAt == nil {
+            session.reflectionSkippedAt = Date()
+            appState.saveSession(session)
+        }
+    }
+
+    /// Called when the popover opens: if a recent session's window was skipped,
+    /// bring it back once. After that it stays unrecorded.
+    func offerPendingReflection() {
+        guard activeSession == nil, firingCommitment == nil, !endWindow.isVisible,
+              var session = appState.sessionNeedingReflection() else { return }
+        session.reflectionReaskedAt = Date()
+        appState.saveSession(session)
+        let commitment = appState.commitment(withID: session.commitmentId)
+            ?? Commitment(id: session.commitmentId, title: session.commitmentTitle,
+                          startTime: session.startedAt, durationMinutes: 0, source: .manual)
+        askForReflection(session, commitment: commitment, isTest: false)
     }
 
     // MARK: - Brown noise (Settings)

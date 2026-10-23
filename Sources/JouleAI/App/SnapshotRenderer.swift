@@ -73,11 +73,14 @@ enum SnapshotRenderer {
             return Session(commitmentId: UUID(), commitmentTitle: title, startedAt: start,
                            endedAt: start.addingTimeInterval(25 * 60), outcome: outcome)
         }
+        var noted = session("Write thesis intro", 2, .done)
+        noted.leftOffNote = note
         let sessions = [
-            session("Write thesis intro", 2, nil),
+            noted,
             session("Inbox zero", 4, .skipped),
             session("Write thesis intro", 26, nil),
             session("Problem set 6", 28, .brokeEarly),
+            session("Inbox zero", 30, .partly),
             session("Read: Deep Work ch. 3", 50, nil),
         ]
 
@@ -92,6 +95,10 @@ enum SnapshotRenderer {
             ("overlay-lock", AnyView(backdrop(LockCardView(
                 title: "Write thesis intro", endsAt: now.addingTimeInterval(18 * 60 + 42),
                 detail: "That tab isn’t part of this session.", onBackToTask: {}, onBreak: { _ in })))),
+            ("end-of-session", AnyView(EndOfSessionView(
+                title: "Write thesis intro", endedEarly: false, onSave: { _, _ in }, onSkip: {}))),
+            ("end-of-session-early", AnyView(EndOfSessionView(
+                title: "Write thesis intro", endedEarly: true, onSave: { _, _ in }, onSkip: {}))),
             ("window-editor", AnyView(CommitmentEditorView(draft: draft, isNew: false, onClose: { _ in })
                 .frame(width: 520, height: 580).background(Theme.background)
                 .environment(AppState()))),   // the editor expects the app's data object

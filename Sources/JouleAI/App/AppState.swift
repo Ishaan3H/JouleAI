@@ -285,6 +285,23 @@ final class AppState {
         Storage.save(sessions, to: Self.sessionsFile)
     }
 
+    func session(withID id: Session.ID) -> Session? {
+        sessions.first { $0.id == id }
+    }
+
+    /// The session whose end-of-session window should come back (once): it
+    /// ended in the last 24 hours, the window was closed without answering,
+    /// and it hasn't been re-asked yet.
+    func sessionNeedingReflection(now: Date = Date()) -> Session? {
+        sessions.last { session in
+            guard let ended = session.endedAt, now.timeIntervalSince(ended) < 24 * 3600 else { return false }
+            return session.reflectionSkippedAt != nil &&
+                   session.reflectionReaskedAt == nil &&
+                   session.leftOffNote == nil &&
+                   (session.outcome == nil || session.outcome == .brokeEarly)
+        }
+    }
+
     /// The most recent "where I left off" note for the same commitment.
     ///
     /// "The same" means: for calendar items, the same calendar event (so a weekly
