@@ -1,6 +1,6 @@
 import AppKit
 
-/// One thing Reckon opens when you press Start: a website, a file, or an app.
+/// One thing JouleAI opens when you press Start: a website, a file, or an app.
 ///
 /// Obsidian notes are just `.url` targets, because Obsidian understands links
 /// like `obsidian://open?vault=MyVault&file=Thesis`.

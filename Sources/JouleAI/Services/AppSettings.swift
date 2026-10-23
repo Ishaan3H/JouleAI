@@ -25,8 +25,8 @@ enum AppSettings {
         UserDefaults.standard.register(defaults: [
             Key.defaultDurationMinutes: 25,
             Key.focusEnabled: true,
-            Key.focusOnShortcut: "Reckon Focus On",
-            Key.focusOffShortcut: "Reckon Focus Off",
+            Key.focusOnShortcut: "JouleAI Focus On",
+            Key.focusOffShortcut: "JouleAI Focus Off",
             Key.focusShortcutMissing: false,
             Key.focusHintDismissed: false,
             Key.brownNoiseEnabled: true,
@@ -48,7 +48,7 @@ enum AppSettings {
     static var focusOnShortcut: String { defaults.string(forKey: Key.focusOnShortcut) ?? "" }
     static var focusOffShortcut: String { defaults.string(forKey: Key.focusOffShortcut) ?? "" }
 
-    /// Set when Reckon tried to run a Focus shortcut that doesn't exist, so the
+    /// Set when JouleAI tried to run a Focus shortcut that doesn't exist, so the
     /// Settings screen can show a hint about creating it.
     static var focusShortcutMissing: Bool {
         get { defaults.bool(forKey: Key.focusShortcutMissing) }

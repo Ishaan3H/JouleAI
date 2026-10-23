@@ -6,7 +6,7 @@
 	     and the `shortcuts` command). Hardened Runtime is switched on at signing time
 	     by the codesign "options runtime" flag in scripts/build-app.sh. -->
 
-	<!-- Allows Reckon to send Apple Events (AppleScript) under the Hardened Runtime. -->
+	<!-- Allows JouleAI to send Apple Events (AppleScript) under the Hardened Runtime. -->
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
 

@@ -1,18 +1,18 @@
 import Foundation
 
-/// Reads and writes Reckon's data as JSON files in
-/// `~/Library/Application Support/Reckon/`.
+/// Reads and writes JouleAI's data as JSON files in
+/// `~/Library/Application Support/JouleAI/`.
 ///
 /// This is deliberately tiny: one file per kind of data (e.g. `commitments.json`),
 /// loaded fully into memory and written back whole on every change. For the
-/// amount of data Reckon keeps, that is fast and very hard to get wrong.
+/// amount of data JouleAI keeps, that is fast and very hard to get wrong.
 enum Storage {
 
-    /// The folder all Reckon files live in. Created on first use.
+    /// The folder all JouleAI files live in. Created on first use.
     static let directory: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory,
                                                   in: .userDomainMask)[0]
-        let folder = appSupport.appendingPathComponent("Reckon", isDirectory: true)
+        let folder = appSupport.appendingPathComponent("JouleAI", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }()
@@ -26,7 +26,7 @@ enum Storage {
             return try decoder.decode(T.self, from: data)
         } catch {
             // Don't crash on a corrupt file; log it so it's visible in Console.app.
-            print("Reckon: could not decode \(fileName): \(error)")
+            print("JouleAI: could not decode \(fileName): \(error)")
             return nil
         }
     }
@@ -40,7 +40,7 @@ enum Storage {
             let data = try encoder.encode(value)
             try data.write(to: url, options: .atomic)
         } catch {
-            print("Reckon: could not save \(fileName): \(error)")
+            print("JouleAI: could not save \(fileName): \(error)")
         }
     }
 
