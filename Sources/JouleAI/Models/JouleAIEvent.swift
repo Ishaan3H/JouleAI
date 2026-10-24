@@ -22,6 +22,8 @@ struct JouleAIEvent: Codable {
         case completed           // the timer ran out
         case reflected           // answered the end-of-session window
         case reflectionSkipped   // closed it without answering
+        case parkedToCommitment  // a parking-lot item became a new commitment
+        case parkedDismissed     // a parking-lot item was dismissed
     }
 
     var timestamp: Date

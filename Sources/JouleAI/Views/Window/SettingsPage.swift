@@ -27,6 +27,8 @@ struct SettingsPage: View {
     @AppStorage(AppSettings.Key.focusOffShortcut) private var focusOffShortcut = "JouleAI Focus Off"
     @AppStorage(AppSettings.Key.focusShortcutMissing) private var focusShortcutMissing = false
 
+    @AppStorage(AppSettings.Key.parkingLotCorner) private var parkingLotCorner = ScreenCorner.bottomRight.rawValue
+
     @AppStorage(AppSettings.Key.brownNoiseEnabled) private var brownNoiseEnabled = true
     @AppStorage(AppSettings.Key.brownNoiseVolume) private var brownNoiseVolume = 0.3
 
@@ -37,6 +39,7 @@ struct SettingsPage: View {
                 browserSection
                 PresetsSection()
                 focusSection
+                parkingLotSection
                 noiseSection
                 debugSection
                 Button("Quit JouleAI") { NSApp.terminate(nil) }
@@ -134,6 +137,16 @@ struct SettingsPage: View {
                     UserDefaults.standard.set(true, forKey: AppSettings.Key.focusHintDismissed)
                 }
                 .buttonStyle(TextButtonStyle())
+            }
+        }
+    }
+
+    private var parkingLotSection: some View {
+        group("Parking lot", footer: "During a session, press ⌘⇧J to jot down a stray thought without leaving your work. It floats above everything, even the lock, and is saved with the session.") {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                Text("Dock to").font(Theme.Font.body).foregroundStyle(Theme.text)
+                ChipPicker(options: ScreenCorner.allCases.map { ($0.label, $0.rawValue) },
+                           selection: $parkingLotCorner)
             }
         }
     }

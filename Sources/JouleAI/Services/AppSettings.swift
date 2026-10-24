@@ -17,6 +17,7 @@ enum AppSettings {
         static let brownNoiseEnabled = "brownNoiseEnabled"
         static let brownNoiseVolume = "brownNoiseVolume"
         static let sessionBrowser = "sessionBrowser"
+        static let parkingLotCorner = "parkingLotCorner"
     }
 
     /// The values used until the user changes them. Called once at launch.
@@ -32,6 +33,7 @@ enum AppSettings {
             Key.brownNoiseEnabled: true,
             Key.brownNoiseVolume: 0.3,
             Key.sessionBrowser: defaultSessionBrowser,
+            Key.parkingLotCorner: ScreenCorner.bottomRight.rawValue,
         ])
     }
 
@@ -74,7 +76,27 @@ enum AppSettings {
             ? chrome : "com.apple.Safari"
     }
 
+    /// Where the parking-lot pad docks.
+    static var parkingLotCorner: ScreenCorner {
+        get { ScreenCorner(rawValue: defaults.string(forKey: Key.parkingLotCorner) ?? "") ?? .bottomRight }
+        set { defaults.set(newValue.rawValue, forKey: Key.parkingLotCorner) }
+    }
+
     static var brownNoiseEnabled: Bool { defaults.bool(forKey: Key.brownNoiseEnabled) }
     /// 0.0 (silent) to 1.0 (full).
     static var brownNoiseVolume: Float { defaults.float(forKey: Key.brownNoiseVolume) }
+}
+
+/// A corner of the screen, for docking the parking-lot pad.
+enum ScreenCorner: String, CaseIterable {
+    case topLeft, topRight, bottomLeft, bottomRight
+
+    var label: String {
+        switch self {
+        case .topLeft: return "Top left"
+        case .topRight: return "Top right"
+        case .bottomLeft: return "Bottom left"
+        case .bottomRight: return "Bottom right"
+        }
+    }
 }

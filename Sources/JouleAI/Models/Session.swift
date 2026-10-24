@@ -24,10 +24,20 @@ struct Session: Codable, Identifiable, Hashable {
     var outcome: Outcome?
     var leftOffNote: String?
     var breakReason: String?
+    /// What you typed into the parking lot during the session (one item per line).
+    var parkedNotes: String?
 
     /// Set when the end-of-session window was closed without answering.
     /// The window then comes back once, the next time the popover opens.
     var reflectionSkippedAt: Date?
     /// Set when that one re-ask has happened, so it never nags twice.
     var reflectionReaskedAt: Date?
+
+    /// The parking-lot lines, without blanks.
+    var parkedItems: [String] {
+        (parkedNotes ?? "")
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
 }

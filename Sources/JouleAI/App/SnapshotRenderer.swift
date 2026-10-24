@@ -99,6 +99,15 @@ enum SnapshotRenderer {
                 detail: "That tab isn’t part of this session.", onBackToTask: {}, onBreak: { _ in })))),
             ("end-of-session", AnyView(EndOfSessionView(
                 title: "Write thesis intro", endedEarly: false, onSave: { _, _ in }, onSkip: {}))),
+            ("end-of-session-parked", AnyView(EndOfSessionView(
+                title: "Write thesis intro", endedEarly: false,
+                parkedItems: ["Email Prof. Lee about the deadline", "Look up the 2019 survey paper", "Buy printer ink"],
+                onSave: { _, _ in }, onSkip: {}))),
+            ("parking-lot", AnyView(ZStack {
+                Color(white: 0.5)
+                ParkingLotView(model: { let m = ParkingLotModel(); m.text = "Email Prof. Lee about the deadline\nLook up the 2019 survey paper"; return m }(),
+                               onClose: {}, onMove: { _ in })
+            }.frame(width: 360, height: 290))),
             ("end-of-session-early", AnyView(EndOfSessionView(
                 title: "Write thesis intro", endedEarly: true, onSave: { _, _ in }, onSkip: {}))),
             ("window-editor", AnyView(CommitmentEditorView(draft: draft, isNew: false, onClose: { _ in })

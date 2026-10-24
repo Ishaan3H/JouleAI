@@ -16,6 +16,9 @@ final class EndOfSessionWindowController: NSObject, NSWindowDelegate {
     var isVisible: Bool { panel?.isVisible ?? false }
 
     func show(title: String, endedEarly: Bool,
+              parkedItems: [String] = [],
+              onMakeCommitment: @escaping (String) -> Void = { _ in },
+              onDismissParked: @escaping (String) -> Void = { _ in },
               onSave: @escaping (Session.Outcome?, String) -> Void,
               onSkip: @escaping () -> Void) {
         close()
@@ -23,6 +26,9 @@ final class EndOfSessionWindowController: NSObject, NSWindowDelegate {
         let view = EndOfSessionView(
             title: title,
             endedEarly: endedEarly,
+            parkedItems: parkedItems,
+            onMakeCommitment: onMakeCommitment,
+            onDismissParked: onDismissParked,
             onSave: { [weak self] outcome, note in
                 self?.finish()
                 onSave(outcome, note)

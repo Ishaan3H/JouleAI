@@ -51,6 +51,7 @@ struct PopoverActions {
     var push: (UUID) -> Void = { _ in }
     var notToday: (UUID) -> Void = { _ in }
     var connectCalendar: () -> Void = {}
+    var openParkingLot: () -> Void = {}
 }
 
 /// The menu bar popover. It answers one question: what's next.
@@ -125,6 +126,11 @@ struct NextUpView: View {
                     Text("ends \(endsAt.formatted(date: .omitted, time: .shortened))")
                         .font(Theme.Font.detail).foregroundStyle(Theme.textSecondary)
                 }
+                Button(action: actions.openParkingLot) {
+                    Label("Parking lot  ⌘⇧J", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(TextButtonStyle(color: Theme.accent))
+                .padding(.leading, -Theme.Space.s)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .card(padding: Theme.Space.xl)

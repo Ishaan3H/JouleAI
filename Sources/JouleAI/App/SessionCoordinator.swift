@@ -65,6 +65,11 @@ final class SessionCoordinator {
     @ObservationIgnored private let audio = AudioMuter()
     @ObservationIgnored private let noise = BrownNoisePlayer()
     @ObservationIgnored private let endWindow = EndOfSessionWindowController()
+    @ObservationIgnored private let parkingLot = ParkingLotController()
+    /// ⌘⇧J, registered only while a session runs.
+    @ObservationIgnored private var parkingLotHotKey: GlobalHotKey?
+    /// Waits a moment after typing stops before saving the parking lot.
+    @ObservationIgnored private var parkedSaveTask: Task<Void, Never>?
     @ObservationIgnored private let notifier = Notifier()
     @ObservationIgnored private var scheduler: Scheduler?
     /// Ticks every second for the countdowns (session time left, time until next).
@@ -82,6 +87,9 @@ final class SessionCoordinator {
 
     init(appState: AppState) {
         self.appState = appState
+
+        parkingLotHotKey = GlobalHotKey { [weak self] in self?.toggleParkingLot() }
+        parkingLot.onTextChange = { [weak self] text in self?.parkedTextChanged(text) }
 
         notifier.onAction = { [weak self] action, id in
             self?.respond(action, to: id, via: "notification")
@@ -323,6 +331,8 @@ final class SessionCoordinator {
 
         clockTick()
         startLock()
+        parkingLot.reset()
+        parkingLotHotKey?.register()
     }
 
     /// Runs a Focus shortcut in the background. If it doesn't exist, fail
@@ -461,6 +471,12 @@ final class SessionCoordinator {
     private func finishSession(outcome: Session.Outcome?, breakReason: String?) {
         guard var active = activeSession else { return }
 
+        parkingLotHotKey?.unregister()
+        parkingLot.hide()
+        parkedSaveTask?.cancel()
+        let parked = parkingLot.model.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        active.session.parkedNotes = parked.isEmpty ? nil : parked
+
         stopLock()
         overlay.hide()
         noise.stop()
@@ -485,6 +501,38 @@ final class SessionCoordinator {
         checkForDueCommitment()
     }
 
+    // MARK: - Parking lot
+
+    /// ⌘⇧J, or the popover's button: show or hide the pad. Only during a session.
+    func toggleParkingLot() {
+        guard activeSession != nil else { return }
+        parkingLot.toggle()
+    }
+
+    /// Keeps the session's parked notes current, saving shortly after typing stops.
+    private func parkedTextChanged(_ text: String) {
+        guard activeSession != nil else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        activeSession?.session.parkedNotes = trimmed.isEmpty ? nil : trimmed
+
+        parkedSaveTask?.cancel()
+        parkedSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self, let active = self.activeSession, !active.isTest else { return }
+            self.appState.saveSession(active.session)
+        }
+    }
+
+    /// Turns a parked thought into a new, uncommitted commitment for later
+    /// today (it won't take over the screen until you commit to it).
+    private func makeCommitment(fromParked item: String, during commitment: Commitment, isTest: Bool) {
+        EventLog.record(.parkedToCommitment, commitment, detail: item, isTest: isTest)
+        guard !isTest else { return }
+        var new = appState.newManualCommitment()
+        new.title = item
+        appState.save(new)
+    }
+
     // MARK: - 5. Reflection ("Where did you leave off?")
 
     /// Opens the end-of-session window for a finished session.
@@ -492,6 +540,13 @@ final class SessionCoordinator {
         endWindow.show(
             title: session.commitmentTitle,
             endedEarly: session.outcome == .brokeEarly,
+            parkedItems: session.parkedItems,
+            onMakeCommitment: { [weak self] item in
+                self?.makeCommitment(fromParked: item, during: commitment, isTest: isTest)
+            },
+            onDismissParked: { item in
+                EventLog.record(.parkedDismissed, commitment, detail: item, isTest: isTest)
+            },
             onSave: { [weak self] outcome, note in
                 self?.saveReflection(sessionID: session.id, commitment: commitment,
                                      outcome: outcome, note: note, isTest: isTest)

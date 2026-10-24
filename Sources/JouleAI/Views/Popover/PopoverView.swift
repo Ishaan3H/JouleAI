@@ -93,7 +93,8 @@ struct PopoverView: View {
                 } else {
                     appState.openCalendarPrivacySettings()
                 }
-            }
+            },
+            openParkingLot: { coordinator.toggleParkingLot() }
         )
     }
 }

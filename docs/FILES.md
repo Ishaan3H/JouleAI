@@ -40,6 +40,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `SessionCoordinator.swift` | The conductor. On each tick: sends the 20-minute heads-up and the 5-minute reminder, shows the Start card at start time, handles Start / Reschedule / Cancel, opens launch targets, runs Focus, plays brown noise, runs the lock (app and tab checks), ends the session, turns Focus off, and opens the end-of-session window. Logs every step. |
 | `MainWindowController.swift` | Opens the JouleAI window (gear icon) and remembers which tab and commitment are selected. |
 | `EndOfSessionWindowController.swift` | Shows the small end-of-session window as a floating panel that can take typing even when another app is in front. Closing it counts as Skip. |
+| `ParkingLotController.swift` | Shows, hides and docks the parking-lot pad: a floating panel one level above the lock, which takes typing without making JouleAI the front app. |
 | `SnapshotRenderer.swift` | Renders every screen with sample data to PNGs in light and dark mode, for design review. Changes nothing. |
 
 ## `Models/`: the shapes of the data
@@ -48,7 +49,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 |---|---|
 | `Commitment.swift` | Something you intend to do at a time: title, start, length, calendar or manual, launch targets, the Commit flag, plus lead-up state (heads-up shown and answered, reminder shown, rescheduled, cancelled). |
 | `LaunchTarget.swift` | One thing to open on Start: a URL, a file or an app. Also builds a readable label from what you picked. |
-| `Session.swift` | One time a commitment fired: when it started and ended, the outcome (done, partly, didn't, skipped, broke early), the "where I left off" note, and whether the end window was skipped. |
+| `Session.swift` | One time a commitment fired: when it started and ended, the outcome (done, partly, didn't, skipped, broke early), the "where I left off" note, the parking-lot notes, and whether the end window was skipped. |
 | `AllowRule.swift` | One allowed app or website rule (a domain, a path like a YouTube channel, or an exact playlist/video link), how a rule matches a web address, the soft warning for common distractions, and `AllowPreset` (a named, reusable set of rules, plus the two starter presets). |
 | `JouleAIEvent.swift` | One line in the event log: what happened, to which commitment, when, and any detail. |
 
@@ -60,6 +61,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `AppSettings.swift` | Small saved preferences (session length, Focus shortcut names, brown noise, browser) and their defaults. |
 | `LegacyMigration.swift` | One-time move of data and settings from when the app was called Reckon. |
 | `CalendarService.swift` | The only file that talks to the Calendar (EventKit): asks permission and reads today's timed events. |
+| `GlobalHotKey.swift` | A system-wide shortcut (⌘⇧J for the parking lot) using macOS's hotkey API, which needs no Accessibility permission. |
 | `Scheduler.swift` | A 30-second timer plus a wake-from-sleep listener. Just says "check now". |
 | `Notifier.swift` | macOS notifications: the heads-up with *I'll be ready / Push 30 min / Not today*, and the plain 5-minute reminder. Passes button clicks back to the coordinator. |
 | `EventLog.swift` | Appends timestamped events to `events.jsonl`, one JSON line each. |
@@ -95,7 +97,8 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `Window/HistoryPage.swift` | History tab: kept / skipped / broke-early counts for 14 days, and each session with its outcome and note. |
 | `Window/SettingsPage.swift` | Settings tab: browser, Focus shortcuts, brown noise, testing buttons, Quit. |
 | `ConflictWarning.swift` | The "clashes with another session" alert. |
-| `EndOfSessionView.swift` | The end-of-session window: Done / Partly / Didn't (unless ended early) and "Where did you leave off?". |
+| `EndOfSessionView.swift` | The end-of-session window: Done / Partly / Didn't (unless ended early) and "Where did you leave off?", with any parked thoughts alongside (Make commitment / Dismiss). |
+| `ParkingLotView.swift` | The parking-lot pad itself: plain text, one thought per line, a corner menu and a close button. |
 
 ## Data on disk (not in the repo)
 

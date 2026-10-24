@@ -101,7 +101,12 @@ final class OverlayController {
             // A tiny delay lets the other app finish its switch before we take
             // focus back; otherwise it can win the race.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                Task { @MainActor in self?.grabKeyboard() }
+                Task { @MainActor in
+                    // If another JouleAI window took the keyboard (the parking
+                    // lot), let it keep it; only take it back from other apps.
+                    if let key = NSApp.keyWindow, !(key is OverlayPanel) { return }
+                    self?.grabKeyboard()
+                }
             }
         }
 
