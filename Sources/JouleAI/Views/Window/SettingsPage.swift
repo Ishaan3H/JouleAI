@@ -35,6 +35,7 @@ struct SettingsPage: View {
             VStack(alignment: .leading, spacing: Theme.Space.xxl) {
                 Text("Settings").font(Theme.Font.title).foregroundStyle(Theme.text)
                 browserSection
+                PresetsSection()
                 focusSection
                 noiseSection
                 debugSection
@@ -72,7 +73,7 @@ struct SettingsPage: View {
     private var divider: some View { Rectangle().fill(Theme.border).frame(height: 1) }
 
     private var browserSection: some View {
-        group("Browser", footer: "During a session, task links open in this browser and its tabs are watched. Firefox-based browsers like Zen can’t be watched, so they aren’t listed.") {
+        group("Browser", footer: "Task links open in this browser. During a session with website rules, tabs are checked in Safari, Chrome, Arc, Brave and Edge. Firefox-based browsers like Zen can’t be checked, so they’re allowed whole.") {
             SettingRow(title: "Open web links in") {
                 Picker("", selection: $sessionBrowser) {
                     ForEach(BrowserTabs.installed, id: \.bundleID) { browser in

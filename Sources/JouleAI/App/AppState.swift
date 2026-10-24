@@ -20,6 +20,9 @@ final class AppState {
     /// Every session ever logged (started, skipped, broken...). Newest last.
     private(set) var sessions: [Session] = []
 
+    /// Saved allowlist presets ("Maths study", "Coding"...), edited in Settings.
+    private(set) var presets: [AllowPreset] = []
+
     /// Current calendar permission.
     private(set) var calendarAccess: CalendarService.Access
 
@@ -49,6 +52,7 @@ final class AppState {
     private let calendarService = CalendarService()
     private static let commitmentsFile = "commitments.json"
     private static let sessionsFile = "sessions.json"
+    private static let presetsFile = "presets.json"
 
     // MARK: - Setup
 
@@ -56,6 +60,13 @@ final class AppState {
         calendarAccess = calendarService.access
         commitments = Storage.load([Commitment].self, from: Self.commitmentsFile) ?? []
         sessions = Storage.load([Session].self, from: Self.sessionsFile) ?? []
+        // First launch: start with two example presets so the feature isn't empty.
+        if let saved = Storage.load([AllowPreset].self, from: Self.presetsFile) {
+            presets = saved
+        } else {
+            presets = AllowPreset.starterPresets
+            Storage.save(presets, to: Self.presetsFile)
+        }
         refresh()
 
         // Re-read the calendar whenever it changes (an event added in Calendar.app,
@@ -242,6 +253,29 @@ final class AppState {
     /// Committed, not cancelled, and not already started/skipped.
     private func isLive(_ item: Commitment) -> Bool {
         item.isCommitted && !item.isCancelled && !hasSession(for: item.id)
+    }
+
+    // MARK: - Presets
+
+    func preset(withID id: UUID?) -> AllowPreset? {
+        guard let id else { return nil }
+        return presets.first { $0.id == id }
+    }
+
+    /// Adds or replaces a preset (matched by id) and saves.
+    func savePreset(_ preset: AllowPreset) {
+        if let index = presets.firstIndex(where: { $0.id == preset.id }) {
+            presets[index] = preset
+        } else {
+            presets.append(preset)
+        }
+        Storage.save(presets, to: Self.presetsFile)
+    }
+
+    /// Deletes a preset. Commitments that used it simply go back to "No preset".
+    func deletePreset(_ id: UUID) {
+        presets.removeAll { $0.id == id }
+        Storage.save(presets, to: Self.presetsFile)
     }
 
     // MARK: - Overlap warnings

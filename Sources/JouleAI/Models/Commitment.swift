@@ -34,8 +34,15 @@ struct Commitment: Codable, Identifiable, Hashable {
     /// Only committed items will take over the screen (from Phase 2).
     var isCommitted: Bool = false
 
-    /// Bundle IDs of extra apps allowed during this commitment's session lock.
+    /// Bundle IDs of extra apps allowed during this commitment's session lock
+    /// (older field; new rules go in `allowRules`).
     var extraAllowedApps: [String] = []
+
+    /// A saved allowlist preset this commitment uses (e.g. "Coding"), if any.
+    var presetID: UUID?
+    /// Apps and website rules allowed during this commitment's sessions,
+    /// on top of its launch targets and preset. Optional so older saves load.
+    var allowRules: [AllowRule]?
 
     // MARK: Lead-up state
     // All optional, so commitments saved before these existed still load

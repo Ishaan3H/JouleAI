@@ -3,36 +3,57 @@ import AppKit
 /// Reads and switches browser tabs using AppleScript.
 ///
 /// Only browsers with an AppleScript "dictionary" for tabs can do this: Safari
-/// and Chrome-based browsers (Chrome, Brave, Edge). Firefox-based browsers like
-/// Zen have none, which is why sessions use a supported browser.
+/// and Chromium browsers (Chrome, Arc, Brave, Edge). Firefox-based browsers like
+/// Firefox and Zen have none, so JouleAI can't see their tabs; during a session
+/// with website rules they're allowed as a whole instead (see SessionAllowlist).
 ///
 /// The first time JouleAI does this, macOS asks "JouleAI wants access to control
-/// Google Chrome". If you say no, tab tracking quietly switches off.
+/// Google Chrome" (per browser). If you say no, tab checking quietly switches off.
 @MainActor
 enum BrowserTabs {
 
-    /// A browser JouleAI can track tabs in.
+    /// A browser JouleAI can read tabs in.
     struct Browser: Hashable {
+        enum Kind { case safari, chromium, arc }
         let bundleID: String
         let name: String
-        /// Safari calls the selected tab "current tab"; Chrome-likes call it "active tab".
-        let isSafari: Bool
+        let kind: Kind
     }
 
     static let supported: [Browser] = [
-        Browser(bundleID: "com.google.Chrome", name: "Google Chrome", isSafari: false),
-        Browser(bundleID: "com.apple.Safari", name: "Safari", isSafari: true),
-        Browser(bundleID: "com.brave.Browser", name: "Brave", isSafari: false),
-        Browser(bundleID: "com.microsoft.edgemac", name: "Microsoft Edge", isSafari: false),
+        Browser(bundleID: "com.google.Chrome", name: "Google Chrome", kind: .chromium),
+        Browser(bundleID: "com.apple.Safari", name: "Safari", kind: .safari),
+        Browser(bundleID: "company.thebrowser.Browser", name: "Arc", kind: .arc),
+        Browser(bundleID: "com.brave.Browser", name: "Brave", kind: .chromium),
+        Browser(bundleID: "com.microsoft.edgemac", name: "Microsoft Edge", kind: .chromium),
+    ]
+
+    /// Browsers whose tabs can't be read. Bundle ID → name.
+    static let unreadable: [String: String] = [
+        "org.mozilla.firefox": "Firefox",
+        "org.mozilla.firefoxdeveloperedition": "Firefox Developer Edition",
+        "org.mozilla.nightly": "Firefox Nightly",
+        "app.zen-browser.zen": "Zen",
+        "io.gitlab.librewolf-community": "LibreWolf",
+        "net.waterfox.waterfox": "Waterfox",
     ]
 
     /// Supported browsers that are actually installed on this Mac.
     static var installed: [Browser] {
-        supported.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil }
+        supported.filter { isInstalled($0.bundleID) }
+    }
+
+    /// Names of unreadable browsers installed on this Mac, e.g. ["Zen"].
+    static var installedUnreadableNames: [String] {
+        unreadable.filter { isInstalled($0.key) }.map(\.value).sorted()
     }
 
     static func browser(withID bundleID: String) -> Browser? {
         supported.first { $0.bundleID == bundleID }
+    }
+
+    private static func isInstalled(_ bundleID: String) -> Bool {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
     }
 
     // MARK: - Reading
@@ -43,7 +64,7 @@ enum BrowserTabs {
     /// Only call this while the browser is running: telling a browser that
     /// isn't open to do something makes macOS launch it.
     static func currentURL(in browser: Browser) -> String? {
-        let tabWord = browser.isSafari ? "current tab" : "active tab"
+        let tabWord = browser.kind == .safari ? "current tab" : "active tab"
         let script = """
         tell application id "\(browser.bundleID)"
             if (count of windows) is 0 then return ""
@@ -56,13 +77,15 @@ enum BrowserTabs {
 
     // MARK: - Switching
 
-    /// Switches to the first open tab that matches one of `targets`, bringing
-    /// its window to the front. If none is open, opens the first target fresh.
-    static func showTaskTab(for targets: [URL], in browser: Browser) {
-        guard !targets.isEmpty else { return }
-
-        if let (windowID, tabIndex) = findTab(matching: targets, in: browser) {
-            let select = browser.isSafari
+    /// Takes you back to a tab that belongs to the session:
+    /// 1. a tab showing one of `preferred` pages (e.g. your Google Doc);
+    /// 2. otherwise any tab `isAllowed` accepts;
+    /// 3. otherwise opens `fallback` fresh.
+    /// Arc can't select tabs by script, so it always takes step 3.
+    static func showTaskTab(in browser: Browser, preferred: [URL],
+                            isAllowed: (URL) -> Bool, fallback: URL?) {
+        if browser.kind != .arc, let (windowID, tabIndex) = findTab(in: browser, preferred: preferred, isAllowed: isAllowed) {
+            let select = browser.kind == .safari
                 ? "set current tab of w to tab \(tabIndex) of w"
                 : "set active tab index of w to \(tabIndex)"
             run("""
@@ -73,8 +96,10 @@ enum BrowserTabs {
                 activate
             end tell
             """)
+        } else if let fallback {
+            open(fallback, in: browser)
         } else {
-            open(targets[0], in: browser)
+            Launcher.bringToFront(bundleID: browser.bundleID)
         }
     }
 
@@ -89,10 +114,10 @@ enum BrowserTabs {
         NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: configuration)
     }
 
-    /// Finds an open tab for one of `targets`. Prefers a tab showing the exact
-    /// page (e.g. that specific Google Doc); otherwise any tab on the same site.
-    /// Returns the window's ID and the tab's position (1 = first tab).
-    private static func findTab(matching targets: [URL], in browser: Browser) -> (Int, Int)? {
+    /// Finds a tab to return to. Returns the window's ID and the tab's
+    /// position (1 = first tab).
+    private static func findTab(in browser: Browser, preferred: [URL],
+                                isAllowed: (URL) -> Bool) -> (Int, Int)? {
         // Ask for every window's ID and the addresses of all its tabs.
         let script = """
         tell application id "\(browser.bundleID)"
@@ -117,14 +142,14 @@ enum BrowserTabs {
             windows.append((Int(idDescriptor.int32Value), tabs))
         }
 
-        // Two passes: exact page first, then same site.
-        for exactPage in [true, false] {
+        // Two passes: one of your launch pages first, then any allowed web page.
+        for preferredPass in [true, false] {
             for window in windows {
                 for (index, tab) in window.tabs.enumerated() {
                     guard let tabURL = URL(string: tab) else { continue }
-                    let matches = targets.contains { target in
-                        exactPage ? SiteMatch.isSamePage(tabURL, target) : SiteMatch.isSameSite(tabURL, target)
-                    }
+                    let matches = preferredPass
+                        ? preferred.contains { SiteMatch.isSamePage(tabURL, $0) }
+                        : SiteMatch.isWeb(tabURL) && isAllowed(tabURL)
                     if matches { return (window.id, index + 1) }
                 }
             }
@@ -147,7 +172,7 @@ enum BrowserTabs {
     }
 }
 
-/// Rules for deciding whether a browser tab belongs to the session.
+/// Small helpers for comparing web addresses.
 enum SiteMatch {
 
     /// Sign-in pages your task's site may bounce you through. Always allowed.
@@ -159,22 +184,14 @@ enum SiteMatch {
         "idmsa.apple.com",
     ]
 
-    /// Is this tab fine to be on during a session with these web targets?
-    ///
-    /// - Non-web pages (new tab, blank page, browser settings) are fine.
-    /// - Sign-in pages are fine.
-    /// - Otherwise the tab must be on the same site as one of the targets
-    ///   (e.g. any page on docs.google.com if a target is a Google Doc).
-    static func isOnTask(_ tabAddress: String, targets: [URL]) -> Bool {
-        guard let tabURL = URL(string: tabAddress),
-              let scheme = tabURL.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return true }
-        if let host = tabURL.host?.lowercased(), signInHosts.contains(host) { return true }
-        return targets.contains { isSameSite(tabURL, $0) }
+    /// True for http:// and https:// pages (not new tabs, settings, blank pages).
+    static func isWeb(_ url: URL) -> Bool {
+        let scheme = url.scheme?.lowercased()
+        return scheme == "http" || scheme == "https"
     }
 
     /// Same host, ignoring "www.", or a subdomain of the target's host
-    /// (a target of youtube.com also allows m.youtube.com).
+    /// (a target of docs.google.com also allows a.docs.google.com).
     static func isSameSite(_ a: URL, _ target: URL) -> Bool {
         guard let tabHost = normalizedHost(a), let targetHost = normalizedHost(target) else { return false }
         return tabHost == targetHost || tabHost.hasSuffix("." + targetHost)
@@ -186,7 +203,8 @@ enum SiteMatch {
         isSameSite(a, target) && a.path.hasPrefix(target.path)
     }
 
-    private static func normalizedHost(_ url: URL) -> String? {
+    /// "WWW.YouTube.com" → "youtube.com".
+    static func normalizedHost(_ url: URL) -> String? {
         guard var host = url.host?.lowercased() else { return nil }
         if host.hasPrefix("www.") { host.removeFirst(4) }
         return host

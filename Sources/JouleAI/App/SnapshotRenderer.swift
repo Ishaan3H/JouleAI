@@ -67,6 +67,8 @@ enum SnapshotRenderer {
         ]
         var draft = Commitment(title: "Write thesis intro", startTime: soon, durationMinutes: 50, source: .manual)
         draft.launchTargets = sampleTargets
+        draft.allowRules = ["youtube.com/playlist?list=PLZHQObOWTQDMsr9K-rj53DwVRMYO3t5Yr", "youtube.com", "desmos.com"]
+            .compactMap(AllowRule.site(from:))
 
         func session(_ title: String, _ hoursAgo: Double, _ outcome: Session.Outcome?) -> Session {
             let start = now.addingTimeInterval(-hoursAgo * 3600)
@@ -100,12 +102,13 @@ enum SnapshotRenderer {
             ("end-of-session-early", AnyView(EndOfSessionView(
                 title: "Write thesis intro", endedEarly: true, onSave: { _, _ in }, onSkip: {}))),
             ("window-editor", AnyView(CommitmentEditorView(draft: draft, isNew: false, onClose: { _ in })
-                .frame(width: 520, height: 580).background(Theme.background)
+                .frame(width: 520, height: 1100).background(Theme.background)
                 .environment(AppState()))),   // the editor expects the app's data object
             ("window-history", AnyView(HistoryView(sessions: sessions)
                 .frame(width: 780, height: 580).background(Theme.background))),
             ("window-settings", AnyView(SettingsPage()
-                .frame(width: 780, height: 760).background(Theme.background))),
+                .frame(width: 780, height: 1500).background(Theme.background)
+                .environment(AppState()))),
         ]
     }
 

@@ -25,12 +25,8 @@ final class SessionCoordinator {
         var commitment: Commitment
         var session: Session
         let endsAt: Date
-        /// Bundle IDs of apps you may use during the session, most important first.
-        let allowedApps: [String]
-        /// The browser whose tabs are checked, and the web links tabs must match.
-        /// Tab checking is off when either is missing.
-        let browser: BrowserTabs.Browser?
-        let webTargets: [URL]
+        /// The apps and websites this session allows (see SessionAllowlist).
+        let allowlist: SessionAllowlist
         /// Test sessions (from the Debug menu) aren't saved to history.
         let isTest: Bool
     }
@@ -78,8 +74,8 @@ final class SessionCoordinator {
     @ObservationIgnored private var isLockShowing = false
     /// Apps you switched to that aren't part of the session. "Back to task" hides them.
     @ObservationIgnored private var strayApps: [NSRunningApplication] = []
-    /// True when the lock on screen was caused by an off-task browser tab.
-    @ObservationIgnored private var lockedForTab = false
+    /// When the lock on screen was caused by an off-task tab: which browser.
+    @ObservationIgnored private var lockedBrowser: BrowserTabs.Browser?
     /// The tab check waits until this time, so pages have a moment to load
     /// after Start or Back to task before being judged.
     @ObservationIgnored private var tabCheckPausedUntil = Date.distantPast
@@ -309,9 +305,8 @@ final class SessionCoordinator {
             commitment: commitment,
             session: session,
             endsAt: now.addingTimeInterval(TimeInterval(commitment.durationMinutes * 60)),
-            allowedApps: Launcher.allowedApps(for: commitment),
-            browser: Launcher.sessionBrowser,
-            webTargets: Launcher.webTargets(of: commitment),
+            allowlist: SessionAllowlist(commitment: commitment,
+                                        preset: appState.preset(withID: commitment.presetID)),
             isTest: isTest
         )
         tabCheckPausedUntil = now.addingTimeInterval(5)
@@ -381,23 +376,23 @@ final class SessionCoordinator {
         strayApps.removeAll()
     }
 
-    /// Runs every second. If the session browser is in front and its selected
-    /// tab is on a site that isn't one of the task's links, show the lock.
+    /// Runs every second. If a readable browser (Safari, Chrome, Arc, Brave,
+    /// Edge) is in front and its selected tab isn't allowed, show the lock.
     ///
     /// Switching tabs doesn't announce itself the way switching apps does, so
     /// the only way to notice is to look regularly.
     private func checkBrowserTab() {
         guard let active = activeSession,
-              let browser = active.browser,
-              !active.webTargets.isEmpty,
+              active.allowlist.watchesWeb,
               !isLockShowing,
               Date() >= tabCheckPausedUntil,
-              NSWorkspace.shared.frontmostApplication?.bundleIdentifier == browser.bundleID,
+              let frontID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+              let browser = BrowserTabs.browser(withID: frontID),
               let address = BrowserTabs.currentURL(in: browser)
         else { return }
 
-        if !SiteMatch.isOnTask(address, targets: active.webTargets) {
-            showLock(forTab: true)
+        if !active.allowlist.allowsAddress(address) {
+            showLock(tabIn: browser)
         }
     }
 
@@ -405,26 +400,24 @@ final class SessionCoordinator {
     private func appDidActivate(_ app: NSRunningApplication?) {
         guard let active = activeSession, let bundleID = app?.bundleIdentifier else { return }
 
-        let allowed = bundleID == Bundle.main.bundleIdentifier ||
-                      Launcher.systemApps.contains(bundleID) ||
-                      active.allowedApps.contains(bundleID)
-        guard !allowed, let app else { return }
+        guard !active.allowlist.allowsApp(bundleID), let app else { return }
         if !strayApps.contains(app) { strayApps.append(app) }
 
         // Already showing the lock? Leave it alone, so an End-early countdown in
         // progress isn't reset. (The overlay takes the keyboard back by itself.)
         guard !isLockShowing else { return }
-        showLock(forTab: false)
+        showLock(tabIn: nil)
     }
 
-    private func showLock(forTab: Bool) {
+    /// Shows the lock card. `tabIn` is the browser when an off-task tab caused it.
+    private func showLock(tabIn browser: BrowserTabs.Browser?) {
         guard let active = activeSession else { return }
         isLockShowing = true
-        lockedForTab = forTab
+        lockedBrowser = browser
         let card = LockCardView(
             title: active.commitment.title,
             endsAt: active.endsAt,
-            detail: forTab ? "That tab isn't part of this session." : nil,
+            detail: browser != nil ? "That tab isn't part of this session." : nil,
             onBackToTask: { [weak self] in self?.backToTask() },
             onBreak: { [weak self] reason in self?.finishSession(outcome: .brokeEarly, breakReason: reason) }
         )
@@ -432,9 +425,10 @@ final class SessionCoordinator {
     }
 
     /// Hides the apps you strayed into and takes you back to the task:
-    /// - if the lock was for a browser tab, or the task's main app is the
-    ///   browser, switch to the task's tab (reopening it if it was closed);
-    /// - otherwise bring the task's first app forward.
+    /// - locked for a tab: switch that browser to an allowed tab (your launch
+    ///   page first), or open one;
+    /// - otherwise bring the task's first app forward (and, if that's a
+    ///   browser, onto an allowed tab).
     private func backToTask() {
         overlay.hide()
         isLockShowing = false
@@ -443,14 +437,18 @@ final class SessionCoordinator {
         tabCheckPausedUntil = Date().addingTimeInterval(3)
 
         guard let active = activeSession else { return }
-        let firstApp = active.allowedApps.first
-        if let browser = active.browser, !active.webTargets.isEmpty,
-           lockedForTab || firstApp == browser.bundleID {
-            BrowserTabs.showTaskTab(for: active.webTargets, in: browser)
-        } else if let firstApp {
+        let allowlist = active.allowlist
+        let tabBrowser = lockedBrowser ?? allowlist.apps.first.flatMap { BrowserTabs.browser(withID: $0) }
+        if let browser = tabBrowser, allowlist.watchesWeb {
+            BrowserTabs.showTaskTab(in: browser, preferred: allowlist.targetLinks,
+                                    isAllowed: { allowlist.allowsWebPage($0) },
+                                    fallback: allowlist.fallbackPage)
+        } else if let firstApp = allowlist.apps.first {
             Launcher.bringToFront(bundleID: firstApp)
+        } else if let page = allowlist.fallbackPage {
+            Launcher.open([LaunchTarget(kind: .url, value: page.absoluteString, label: "")])
         }
-        lockedForTab = false
+        lockedBrowser = nil
     }
 
     // MARK: - 4. Ending

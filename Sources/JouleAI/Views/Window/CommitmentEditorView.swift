@@ -39,6 +39,7 @@ struct CommitmentEditorView: View {
                     detailsSection
                     lengthSection
                     targetsSection
+                    allowSection
                 }
                 .padding(Theme.Space.xxl)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -168,6 +169,57 @@ struct CommitmentEditorView: View {
                     .buttonStyle(OutlineButtonStyle())
             }
         }
+    }
+
+    /// Which apps and websites the session lock lets you use.
+    private var allowSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            SectionLabel("Allowed during the session")
+            Text("What opens on Start is always allowed. Add a preset, and any other apps or sites you’ll need.")
+                .font(Theme.Font.detail)
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: Theme.Space.s) {
+                Text("Preset").font(Theme.Font.body).foregroundStyle(Theme.text)
+                Picker("", selection: $draft.presetID) {
+                    Text("None").tag(UUID?.none)
+                    ForEach(appState.presets) { preset in
+                        Text(preset.name).tag(Optional(preset.id))
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                Spacer()
+            }
+            if let preset = appState.preset(withID: draft.presetID) {
+                Text(preset.rules.isEmpty ? "This preset is empty. Edit it in Settings."
+                                          : preset.rules.map(\.label).joined(separator: " · "))
+                    .font(Theme.Font.detail)
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(2)
+            }
+
+            AllowRulesEditor(rules: Binding(
+                get: { draft.allowRules ?? [] },
+                set: { draft.allowRules = $0 }
+            ))
+
+            if watchesWeb {
+                Text("Tip: a YouTube channel rule covers the channel’s pages, not its videos. Use a playlist link to allow a set of videos.")
+                    .font(Theme.Font.detail)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                UnreadableBrowsersNote()
+            }
+        }
+    }
+
+    /// True when this commitment will check browser tabs (it has any web link or rule).
+    private var watchesWeb: Bool {
+        let presetRules = appState.preset(withID: draft.presetID)?.rules ?? []
+        return !Launcher.webTargets(of: draft).isEmpty
+            || (presetRules + (draft.allowRules ?? [])).contains { $0.kind == .site }
     }
 
     private func targetRow(_ target: LaunchTarget) -> some View {
