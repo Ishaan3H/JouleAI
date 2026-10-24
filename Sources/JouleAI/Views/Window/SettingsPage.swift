@@ -76,7 +76,7 @@ struct SettingsPage: View {
     private var divider: some View { Rectangle().fill(Theme.border).frame(height: 1) }
 
     private var browserSection: some View {
-        group("Browser", footer: "Task links open in this browser. During a session with website rules, tabs are checked in Safari, Chrome, Arc, Brave and Edge. Firefox-based browsers like Zen can’t be checked, so they’re allowed whole.") {
+        group("Browser", footer: "Task links always open in this browser, never in Zen or Firefox. During a session with website rules, tabs are checked in Safari, Chrome, Arc, Brave and Edge.") {
             SettingRow(title: "Open web links in") {
                 Picker("", selection: $sessionBrowser) {
                     ForEach(BrowserTabs.installed, id: \.bundleID) { browser in
@@ -85,6 +85,10 @@ struct SettingsPage: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+            }
+            if !BrowserTabs.installedUnreadableNames.isEmpty {
+                Rectangle().fill(Theme.border).frame(height: 1)
+                UnreadableBrowsersNote()
             }
         }
     }

@@ -61,16 +61,77 @@ struct SessionAllowlist {
     // MARK: - The two questions
 
     /// May this app be in front during the session?
+    ///
+    /// With website rules, browsers may be used, but only if their pages can be
+    /// checked: Safari and Chromium browsers by tab address, Firefox-based ones
+    /// (Zen, Firefox) by window title, which needs Accessibility permission.
+    /// A browser whose pages can't be checked is never allowed automatically.
     func allowsApp(_ bundleID: String) -> Bool {
         if bundleID == Bundle.main.bundleIdentifier || Launcher.systemApps.contains(bundleID) { return true }
-        if apps.contains(bundleID) { return true }
-        // With website rules, browsers are allowed: readable ones have their tabs
-        // checked; unreadable ones (Firefox, Zen) are allowed whole, since their
-        // tabs can't be seen.
-        if watchesWeb {
-            return BrowserTabs.browser(withID: bundleID) != nil || BrowserTabs.unreadable[bundleID] != nil
-        }
+        if apps.contains(bundleID) { return true }   // you listed it yourself: allowed whole
+        guard watchesWeb else { return false }
+        if BrowserTabs.browser(withID: bundleID) != nil { return true }
+        if BrowserTabs.unreadable[bundleID] != nil { return WindowTitleReader.isAllowed }
         return false
+    }
+
+    /// True if this app was allowed by name (a launch target or an app rule),
+    /// so its pages aren't checked.
+    func explicitlyAllows(_ bundleID: String) -> Bool { apps.contains(bundleID) }
+
+    /// May a Firefox-based browser window with this title be in front?
+    ///
+    /// Titles look like "Calculus | Khan Academy — Zen Browser". A site counts
+    /// as matching when every word of its name appears in the title
+    /// (khanacademy.org → "khanacademy"; docs.google.com → "docs" + "google").
+    /// A path rule also needs its last part (youtube.com/@3blue1brown →
+    /// "3blue1brown"). Playlist and video links can't be recognised from a
+    /// title, so in these browsers they don't match: use Chrome or Safari.
+    func allowsTitle(_ rawTitle: String) -> Bool {
+        let title = Self.stripBrowserName(rawTitle)
+        let squashed = Self.squash(title)
+        // Empty, new or private tab: nothing to judge yet.
+        if squashed.isEmpty || ["newtab", "privatebrowsing", "newprivatetab"].contains(squashed) { return true }
+        if squashed.contains("signin") || squashed.contains("googleaccounts") { return true }
+
+        let hosts = targetSites.compactMap(SiteMatch.normalizedHost)
+        if hosts.contains(where: { Self.titleMentions(squashed, host: $0) }) { return true }
+
+        return siteRules.contains { rule in
+            guard let url = URL(string: "https://" + rule.value), let host = SiteMatch.normalizedHost(url),
+                  url.query == nil, Self.titleMentions(squashed, host: host) else { return false }
+            let lastPart = Self.squash(url.lastPathComponent)
+            return lastPart.isEmpty || squashed.contains(lastPart)
+        }
+    }
+
+    /// Every word of the site's name is in the title.
+    private static func titleMentions(_ squashedTitle: String, host: String) -> Bool {
+        var labels = host.split(separator: ".").map(String.init)
+        guard labels.count >= 2 else { return false }
+        labels.removeLast()                                         // "org", "com"…
+        if let last = labels.last, ["co", "com", "ac", "org"].contains(last), labels.count > 1 {
+            labels.removeLast()                                     // "co" in .co.uk
+        }
+        let words = labels.filter { !["www", "m", "app"].contains($0) }.map(squash)
+        return !words.isEmpty && words.allSatisfy { squashedTitle.contains($0) }
+    }
+
+    /// Removes " — Zen Browser", " - Mozilla Firefox" and similar from the end.
+    private static func stripBrowserName(_ title: String) -> String {
+        let suffixes = ["Zen Browser", "Zen", "Mozilla Firefox", "Firefox Developer Edition",
+                        "Firefox Nightly", "Firefox", "LibreWolf", "Waterfox"]
+        for separator in [" — ", " – ", " - "] {
+            for suffix in suffixes where title.hasSuffix(separator + suffix) {
+                return String(title.dropLast(separator.count + suffix.count))
+            }
+        }
+        return suffixes.contains(title) ? "" : title
+    }
+
+    /// Lowercase letters and digits only: "Khan Academy" → "khanacademy".
+    private static func squash(_ text: String) -> String {
+        String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
     }
 
     /// May a tab with this address be open?

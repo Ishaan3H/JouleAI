@@ -24,6 +24,8 @@ struct JouleAIEvent: Codable {
         case reflectionSkipped   // closed it without answering
         case parkedToCommitment  // a parking-lot item became a new commitment
         case parkedDismissed     // a parking-lot item was dismissed
+        case focusShortcut       // a Focus shortcut was run (or found missing), with the result
+        case browserBlocked      // a browser was blocked: its pages couldn't be checked
     }
 
     var timestamp: Date

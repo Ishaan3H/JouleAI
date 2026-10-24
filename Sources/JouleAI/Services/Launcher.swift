@@ -4,12 +4,14 @@ import AppKit
 @MainActor
 enum Launcher {
 
-    /// The browser chosen in Settings for sessions, if it's installed.
-    static var sessionBrowser: BrowserTabs.Browser? {
-        guard let browser = BrowserTabs.browser(withID: AppSettings.sessionBrowserID),
-              NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.bundleID) != nil
-        else { return nil }
-        return browser
+    /// The browser web links open in during sessions: the one chosen in
+    /// Settings, else Chrome, else Safari. Never your default browser if that's
+    /// one whose tabs can't be read (like Zen), so the lock can always check.
+    static var sessionBrowser: BrowserTabs.Browser {
+        let installed = BrowserTabs.installed
+        return installed.first { $0.bundleID == AppSettings.sessionBrowserID }
+            ?? installed.first { $0.bundleID == "com.google.Chrome" }
+            ?? BrowserTabs.browser(withID: "com.apple.Safari")!   // Safari is on every Mac
     }
 
     /// True for http:// and https:// links.
@@ -36,9 +38,9 @@ enum Launcher {
             switch target.kind {
             case .url:
                 guard let url = URL(string: target.value) else { continue }
-                if isWebLink(url), let browser = sessionBrowser {
+                if isWebLink(url) {
                     // Web links go to the session browser, so JouleAI can watch its tabs.
-                    BrowserTabs.open(url, in: browser)
+                    BrowserTabs.open(url, in: sessionBrowser)
                 } else {
                     NSWorkspace.shared.open(url)   // e.g. obsidian:// opens Obsidian
                 }
@@ -82,8 +84,8 @@ enum Launcher {
                 add(target.value)
             case .url:
                 guard let url = URL(string: target.value) else { continue }
-                if isWebLink(url), let browser = sessionBrowser {
-                    add(browser.bundleID)
+                if isWebLink(url) {
+                    add(sessionBrowser.bundleID)   // never the default browser
                 } else {
                     add(bundleID(ofAppAt: NSWorkspace.shared.urlForApplication(toOpen: url)))
                 }

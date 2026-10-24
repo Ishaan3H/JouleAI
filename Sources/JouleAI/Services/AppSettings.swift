@@ -14,6 +14,8 @@ enum AppSettings {
         static let focusOffShortcut = "focusOffShortcut"
         static let focusShortcutMissing = "focusShortcutMissing"
         static let focusHintDismissed = "focusHintDismissed"
+        static let focusMissingAlertShown = "focusMissingAlertShown"
+        static let titleCheckExplained = "titleCheckExplained"
         static let brownNoiseEnabled = "brownNoiseEnabled"
         static let brownNoiseVolume = "brownNoiseVolume"
         static let sessionBrowser = "sessionBrowser"

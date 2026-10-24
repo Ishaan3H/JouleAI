@@ -322,7 +322,7 @@ final class SessionCoordinator {
         Launcher.open(commitment.launchTargets)
 
         if AppSettings.focusEnabled {
-            runShortcut(AppSettings.focusOnShortcut)
+            runShortcut(AppSettings.focusOnShortcut, turningOn: true, for: commitment, isTest: isTest)
         }
         if AppSettings.brownNoiseEnabled {
             stopNoisePreview()
@@ -331,16 +331,26 @@ final class SessionCoordinator {
 
         clockTick()
         startLock()
+        explainTitleCheckingIfNeeded()
         parkingLot.reset()
         parkingLotHotKey?.register()
     }
 
-    /// Runs a Focus shortcut in the background. If it doesn't exist, fail
-    /// silently and leave a hint for the Settings screen.
-    private func runShortcut(_ name: String) {
+    /// Runs a Focus shortcut in the background and records exactly what
+    /// happened (exit code and error output) in the event log. If the shortcut
+    /// doesn't exist, says so once, with steps to create it.
+    private func runShortcut(_ name: String, turningOn: Bool, for commitment: Commitment, isTest: Bool) {
         Task {
-            if await FocusShortcut.run(named: name) == .missing {
+            let result = await FocusShortcut.run(named: name)
+            let detail = "Focus \(turningOn ? "on" : "off") via “\(name)”: \(result.logText)"
+            print("JouleAI: \(detail)")
+            EventLog.record(.focusShortcut, commitment, detail: detail, isTest: isTest)
+
+            if result == .missing {
                 AppSettings.noteFocusShortcutMissing()
+                FocusShortcutHelp.showOnce(missing: name)
+            } else if case .failed = result {
+                FocusShortcutHelp.showFailure(name: name, result: result)
             }
         }
     }
@@ -396,13 +406,68 @@ final class SessionCoordinator {
               active.allowlist.watchesWeb,
               !isLockShowing,
               Date() >= tabCheckPausedUntil,
-              let frontID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-              let browser = BrowserTabs.browser(withID: frontID),
-              let address = BrowserTabs.currentURL(in: browser)
+              let front = NSWorkspace.shared.frontmostApplication,
+              let frontID = front.bundleIdentifier
         else { return }
 
-        if !active.allowlist.allowsAddress(address) {
-            showLock(tabIn: browser)
+        // Safari and Chromium browsers: check the tab's address.
+        if let browser = BrowserTabs.browser(withID: frontID) {
+            if let address = BrowserTabs.currentURL(in: browser), !active.allowlist.allowsAddress(address) {
+                showLock(tabIn: browser)
+            }
+            return
+        }
+
+        // Firefox-based browsers (Zen, Firefox): check the window title instead.
+        if let name = BrowserTabs.unreadable[frontID], !active.allowlist.explicitlyAllows(frontID) {
+            guard WindowTitleReader.isAllowed else {
+                blockUnreadableBrowser(front, name: name, commitment: active.commitment, isTest: active.isTest)
+                return
+            }
+            if let title = WindowTitleReader.frontWindowTitle(processID: front.processIdentifier),
+               !active.allowlist.allowsTitle(title) {
+                if !strayApps.contains(front) { strayApps.append(front) }
+                showLock(tabIn: nil, detail: "That \(name) page isn’t part of this session.")
+            }
+        }
+    }
+
+    /// A Firefox-based browser came to the front, but without Accessibility
+    /// permission its pages can't be checked, so it's blocked, and the lock says why.
+    private func blockUnreadableBrowser(_ app: NSRunningApplication, name: String,
+                                        commitment: Commitment, isTest: Bool) {
+        if !strayApps.contains(app) { strayApps.append(app) }
+        guard !isLockShowing else { return }
+        EventLog.record(.browserBlocked, commitment,
+                        detail: "\(name): Accessibility permission not granted, pages can’t be checked", isTest: isTest)
+        showLock(tabIn: nil, detail: "\(name) is blocked: JouleAI can’t see which page it’s on without Accessibility permission. Use Chrome or Safari, or allow JouleAI in System Settings → Privacy & Security → Accessibility.")
+    }
+
+    /// The first session with website rules on a Mac that has Zen or Firefox:
+    /// explain why JouleAI wants Accessibility permission, then ask macOS.
+    private func explainTitleCheckingIfNeeded() {
+        guard let active = activeSession, active.allowlist.watchesWeb,
+              !WindowTitleReader.isAllowed,
+              !UserDefaults.standard.bool(forKey: AppSettings.Key.titleCheckExplained) else { return }
+        let names = BrowserTabs.installedUnreadableNames
+        guard !names.isEmpty else { return }
+        UserDefaults.standard.set(true, forKey: AppSettings.Key.titleCheckExplained)
+
+        let list = names.joined(separator: " and ")
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Let JouleAI check pages in \(list)?"
+        alert.informativeText = """
+        JouleAI can read Safari and Chrome tabs directly, but \(list) don’t allow that. Instead, JouleAI can read the title of the front \(list) window during a session, to see whether you’re on an allowed site.
+
+        That needs the Accessibility permission. JouleAI uses it only to read that window title. It never reads what you type or what’s on the page.
+
+        If you’d rather not, \(list) will be blocked during sessions with website rules. Chrome and Safari still work.
+        """
+        alert.addButton(withTitle: "Continue")
+        alert.addButton(withTitle: "Not now")
+        if alert.runModal() == .alertFirstButtonReturn {
+            WindowTitleReader.requestPermission()
         }
     }
 
@@ -410,6 +475,11 @@ final class SessionCoordinator {
     private func appDidActivate(_ app: NSRunningApplication?) {
         guard let active = activeSession, let bundleID = app?.bundleIdentifier else { return }
 
+        if let name = BrowserTabs.unreadable[bundleID], let app,
+           active.allowlist.watchesWeb, !active.allowlist.explicitlyAllows(bundleID), !WindowTitleReader.isAllowed {
+            blockUnreadableBrowser(app, name: name, commitment: active.commitment, isTest: active.isTest)
+            return
+        }
         guard !active.allowlist.allowsApp(bundleID), let app else { return }
         if !strayApps.contains(app) { strayApps.append(app) }
 
@@ -419,15 +489,16 @@ final class SessionCoordinator {
         showLock(tabIn: nil)
     }
 
-    /// Shows the lock card. `tabIn` is the browser when an off-task tab caused it.
-    private func showLock(tabIn browser: BrowserTabs.Browser?) {
+    /// Shows the lock card. `tabIn` is the browser when an off-task tab caused
+    /// it; `detail` overrides the explanation line.
+    private func showLock(tabIn browser: BrowserTabs.Browser?, detail: String? = nil) {
         guard let active = activeSession else { return }
         isLockShowing = true
         lockedBrowser = browser
         let card = LockCardView(
             title: active.commitment.title,
             endsAt: active.endsAt,
-            detail: browser != nil ? "That tab isn't part of this session." : nil,
+            detail: detail ?? (browser != nil ? "That tab isn't part of this session." : nil),
             onBackToTask: { [weak self] in self?.backToTask() },
             onBreak: { [weak self] reason in self?.finishSession(outcome: .brokeEarly, breakReason: reason) }
         )
@@ -481,7 +552,7 @@ final class SessionCoordinator {
         overlay.hide()
         noise.stop()
         if AppSettings.focusEnabled {
-            runShortcut(AppSettings.focusOffShortcut)
+            runShortcut(AppSettings.focusOffShortcut, turningOn: false, for: active.commitment, isTest: active.isTest)
         }
 
         active.session.endedAt = Date()

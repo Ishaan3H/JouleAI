@@ -18,6 +18,19 @@ enum LegacyMigration {
     static func run() {
         moveDataFolder()
         copySettings()
+        resetOldShortcutNames()
+    }
+
+    /// The Focus shortcut names used to default to "Reckon Focus On/Off". If a
+    /// setting still holds exactly that old default, clear it so the new
+    /// default ("JouleAI Focus On/Off") applies. Names you typed yourself stay.
+    private static func resetOldShortcutNames() {
+        let defaults = UserDefaults.standard
+        let old = [AppSettings.Key.focusOnShortcut: "Reckon Focus On",
+                   AppSettings.Key.focusOffShortcut: "Reckon Focus Off"]
+        for (key, oldName) in old where defaults.string(forKey: key) == oldName {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     /// Renames the old data folder, unless the new one already exists.

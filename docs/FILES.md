@@ -61,6 +61,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `AppSettings.swift` | Small saved preferences (session length, Focus shortcut names, brown noise, browser) and their defaults. |
 | `LegacyMigration.swift` | One-time move of data and settings from when the app was called Reckon. |
 | `CalendarService.swift` | The only file that talks to the Calendar (EventKit): asks permission and reads today's timed events. |
+| `WindowTitleReader.swift` | Reads the front window title of Firefox-based browsers (Zen, Firefox) through the Accessibility API, and asks for that permission. |
 | `GlobalHotKey.swift` | A system-wide shortcut (⌘⇧J for the parking lot) using macOS's hotkey API, which needs no Accessibility permission. |
 | `Scheduler.swift` | A 30-second timer plus a wake-from-sleep listener. Just says "check now". |
 | `Notifier.swift` | macOS notifications: the heads-up with *I'll be ready / Push 30 min / Not today*, and the plain 5-minute reminder. Passes button clicks back to the coordinator. |
@@ -69,7 +70,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `Launcher.swift` | Opens launch targets (web links in the session browser), and works out which apps a session allows. |
 | `BrowserTabs.swift` | Reads the current tab and switches tabs in Safari, Chrome, Arc, Brave and Edge via AppleScript; knows which browsers (Firefox, Zen…) can't be read. |
 | `SessionAllowlist.swift` | Built when a session starts: combines launch targets, the commitment's preset and its own rules, then answers "may this app be in front?" and "may this tab be open?". |
-| `FocusShortcut.swift` | Runs a Shortcut by name with the `shortcuts` command (how Focus gets turned on and off). |
+| `FocusShortcut.swift` | Runs a Shortcut by name with the `shortcuts` command (how Focus gets turned on and off): checks `shortcuts list` first and reports the exit code and error output. |
 | `BrownNoisePlayer.swift` | Generates brown noise in real time with AVAudioEngine. No audio file. |
 
 ## `Overlay/`: the full-screen takeover
@@ -96,6 +97,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `Window/PresetsSection.swift` | The "Allowlist presets" part of Settings: add, rename, edit, delete presets. |
 | `Window/HistoryPage.swift` | History tab: kept / skipped / broke-early counts for 14 days, and each session with its outcome and note. |
 | `Window/SettingsPage.swift` | Settings tab: browser, Focus shortcuts, brown noise, testing buttons, Quit. |
+| `FocusShortcutHelp.swift` | The one-time "Focus didn't turn on" message with steps to create the shortcut, and the message when it fails to run. |
 | `ConflictWarning.swift` | The "clashes with another session" alert. |
 | `EndOfSessionView.swift` | The end-of-session window: Done / Partly / Didn't (unless ended early) and "Where did you leave off?", with any parked thoughts alongside (Make commitment / Dismiss). |
 | `ParkingLotView.swift` | The parking-lot pad itself: plain text, one thought per line, a corner menu and a close button. |
