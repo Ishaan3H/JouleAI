@@ -116,7 +116,7 @@ enum SnapshotRenderer {
             ("window-history", AnyView(HistoryView(sessions: sessions)
                 .frame(width: 780, height: 580).background(Theme.background))),
             ("window-settings", AnyView(SettingsPage()
-                .frame(width: 780, height: 1500).background(Theme.background)
+                .frame(width: 780, height: 2350).background(Theme.background)
                 .environment(AppState()))),
         ]
     }

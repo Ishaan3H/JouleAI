@@ -25,6 +25,18 @@ struct JouleAIApp: App {
             exit(0)
         }
 
+        // `--export-data`: write the same file as Settings → Export my data
+        // (anonymised) to ~/Downloads, print where, and quit.
+        if DataExport.isRequested {
+            do {
+                print(try DataExport.run(anonymise: !CommandLine.arguments.contains("--raw")).path)
+                exit(0)
+            } catch {
+                print("Export failed: \(error)")
+                exit(1)
+            }
+        }
+
         let state = AppState()
         _appState = State(initialValue: state)
         _coordinator = State(initialValue: SessionCoordinator(appState: state))

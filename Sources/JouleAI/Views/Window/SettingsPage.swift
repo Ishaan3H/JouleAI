@@ -32,6 +32,9 @@ struct SettingsPage: View {
     @AppStorage(AppSettings.Key.brownNoiseEnabled) private var brownNoiseEnabled = true
     @AppStorage(AppSettings.Key.brownNoiseVolume) private var brownNoiseVolume = 0.3
 
+    /// Whether "Export my data" replaces typed text with codes. On by default.
+    @AppStorage(AppSettings.Key.exportAnonymised) private var exportAnonymised = true
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xxl) {
@@ -41,6 +44,7 @@ struct SettingsPage: View {
                 focusSection
                 parkingLotSection
                 noiseSection
+                dataSection
                 debugSection
                 Button("Quit JouleAI") { NSApp.terminate(nil) }
                     .buttonStyle(TextButtonStyle(color: Theme.danger))
@@ -175,6 +179,21 @@ struct SettingsPage: View {
                     .disabled(actions.inSession)
             }
             .disabled(!brownNoiseEnabled)
+        }
+    }
+
+    private var dataSection: some View {
+        group("Your data", footer: "Saves one file to your Downloads folder and shows it in Finder. Nothing is sent anywhere: if you’re testing JouleAI, send the file back yourself.") {
+            SettingRow(title: "Anonymise titles and notes",
+                       subtitle: "Replaces what you typed with codes like “title-3f2a”.") {
+                Toggle("", isOn: $exportAnonymised).toggleStyle(.switch).tint(Theme.accent).labelsHidden()
+            }
+            divider
+            HStack {
+                Button("Export my data") { DataExport.runAndReveal(anonymise: exportAnonymised) }
+                    .buttonStyle(OutlineButtonStyle())
+                Spacer()
+            }
         }
     }
 

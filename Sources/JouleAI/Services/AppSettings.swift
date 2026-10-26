@@ -20,6 +20,8 @@ enum AppSettings {
         static let brownNoiseVolume = "brownNoiseVolume"
         static let sessionBrowser = "sessionBrowser"
         static let parkingLotCorner = "parkingLotCorner"
+        static let exportAnonymised = "exportAnonymised"
+        static let exportSalt = "exportSalt"
     }
 
     /// The values used until the user changes them. Called once at launch.

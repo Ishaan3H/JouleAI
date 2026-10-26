@@ -413,7 +413,9 @@ final class SessionCoordinator {
         // Safari and Chromium browsers: check the tab's address.
         if let browser = BrowserTabs.browser(withID: frontID) {
             if let address = BrowserTabs.currentURL(in: browser), !active.allowlist.allowsAddress(address) {
-                showLock(tabIn: browser)
+                // Log only the site's host (e.g. "youtube.com"), never the full address.
+                let host = URL(string: address)?.host() ?? "unknown host"
+                showLock(tabIn: browser, cause: "tab: \(host) in \(browser.name)")
             }
             return
         }
@@ -427,7 +429,9 @@ final class SessionCoordinator {
             if let title = WindowTitleReader.frontWindowTitle(processID: front.processIdentifier),
                !active.allowlist.allowsTitle(title) {
                 if !strayApps.contains(front) { strayApps.append(front) }
-                showLock(tabIn: nil, detail: "That \(name) page isn’t part of this session.")
+                // Only the browser's name is logged: the window title may be private.
+                showLock(tabIn: nil, cause: "tab: \(name) page (checked by window title)",
+                         detail: "That \(name) page isn’t part of this session.")
             }
         }
     }
@@ -440,7 +444,7 @@ final class SessionCoordinator {
         guard !isLockShowing else { return }
         EventLog.record(.browserBlocked, commitment,
                         detail: "\(name): Accessibility permission not granted, pages can’t be checked", isTest: isTest)
-        showLock(tabIn: nil, detail: "\(name) is blocked: JouleAI can’t see which page it’s on without Accessibility permission. Use Chrome or Safari, or allow JouleAI in System Settings → Privacy & Security → Accessibility.")
+        showLock(tabIn: nil, cause: "blocked browser: \(name)", detail: "\(name) is blocked: JouleAI can’t see which page it’s on without Accessibility permission. Use Chrome or Safari, or allow JouleAI in System Settings → Privacy & Security → Accessibility.")
     }
 
     /// The first session with website rules on a Mac that has Zen or Firefox:
@@ -486,13 +490,15 @@ final class SessionCoordinator {
         // Already showing the lock? Leave it alone, so an End-early countdown in
         // progress isn't reset. (The overlay takes the keyboard back by itself.)
         guard !isLockShowing else { return }
-        showLock(tabIn: nil)
+        showLock(tabIn: nil, cause: "app: \(bundleID) (\(app.localizedName ?? "unknown"))")
     }
 
     /// Shows the lock card. `tabIn` is the browser when an off-task tab caused
-    /// it; `detail` overrides the explanation line.
-    private func showLock(tabIn browser: BrowserTabs.Browser?, detail: String? = nil) {
+    /// it; `cause` is what gets logged (an app's bundle ID, a tab's host, or a
+    /// blocked browser); `detail` overrides the explanation line on the card.
+    private func showLock(tabIn browser: BrowserTabs.Browser?, cause: String, detail: String? = nil) {
         guard let active = activeSession else { return }
+        EventLog.record(.lockShown, active.commitment, detail: cause, isTest: active.isTest)
         isLockShowing = true
         lockedBrowser = browser
         let card = LockCardView(
@@ -518,6 +524,7 @@ final class SessionCoordinator {
         tabCheckPausedUntil = Date().addingTimeInterval(3)
 
         guard let active = activeSession else { return }
+        EventLog.record(.backToTask, active.commitment, isTest: active.isTest)
         let allowlist = active.allowlist
         let tabBrowser = lockedBrowser ?? allowlist.apps.first.flatMap { BrowserTabs.browser(withID: $0) }
         if let browser = tabBrowser, allowlist.watchesWeb {

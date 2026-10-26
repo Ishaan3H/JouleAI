@@ -26,16 +26,19 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 |---|---|
 | `Package.swift` | The project definition. Tells Swift the app is called JouleAI, needs macOS 14, and where the code lives. Used instead of an Xcode project so it builds from the command line. |
 | `scripts/build-app.sh` | Builds the code, wraps it into `build/JouleAI.app` with its Info.plist and entitlements, signs it with Hardened Runtime, and (with `--run`) relaunches it. |
+| `scripts/make-release.sh` | Makes a release build and zips it as `build/JouleAI-<version>.zip` (version from Info.plist) for testers. Upload the zip to a GitHub Release. |
+| `scripts/stats.py` | Reads tester export files and prints, per tester and overall: sessions fired, Start vs skip, heads-up answers, reschedules, broke-early rate, outcomes, lock shows, parked items, Focus results. `--csv` saves the numbers too. Python 3, nothing to install. |
 | `Resources/Info.plist` | The app's ID card: name, bundle ID (`com.jouleai.mac`), no Dock icon (`LSUIElement`), and the text macOS shows when asking for calendar and AppleScript permission. |
 | `Resources/JouleAI.entitlements` | Permissions baked into the signature: AppleScript (Apple Events) and calendar access under Hardened Runtime. No sandbox, on purpose. |
 | `README.md` | How to build and run. |
 | `docs/FILES.md` | This file. |
+| `docs/TESTING.md` | For testers: installing the unsigned zip (the "Open Anyway" step), the permissions JouleAI asks for, exporting data, and quitting. |
 
 ## `App/`: startup and the parts that coordinate everything
 
 | File | What it does |
 |---|---|
-| `JouleAIApp.swift` | Where the app starts. Runs the one-time migration, sets default settings, creates AppState and SessionCoordinator, and puts the icon (or countdown) in the menu bar. `--snapshots` renders screenshots instead. |
+| `JouleAIApp.swift` | Where the app starts. Runs the one-time migration, sets default settings, creates AppState and SessionCoordinator, and puts the icon (or countdown) in the menu bar. `--snapshots` renders screenshots instead; `--export-data` writes an anonymised export to Downloads and prints its path (add `--raw` to keep text). |
 | `AppState.swift` | The app's memory and rules. Holds commitments and sessions, merges in today's calendar events, saves every change, and answers questions like "what's due now?", "what needs a heads-up?", "does this clash with anything?", "what was the last note for this?". |
 | `SessionCoordinator.swift` | The conductor. On each tick: sends the 20-minute heads-up and the 5-minute reminder, shows the Start card at start time, handles Start / Reschedule / Cancel, opens launch targets, runs Focus, plays brown noise, runs the lock (app and tab checks), ends the session, turns Focus off, and opens the end-of-session window. Logs every step. |
 | `MainWindowController.swift` | Opens the JouleAI window (gear icon) and remembers which tab and commitment are selected. |
@@ -66,6 +69,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `Scheduler.swift` | A 30-second timer plus a wake-from-sleep listener. Just says "check now". |
 | `Notifier.swift` | macOS notifications: the heads-up with *I'll be ready / Push 30 min / Not today*, and the plain 5-minute reminder. Passes button clicks back to the coordinator. |
 | `EventLog.swift` | Appends timestamped events to `events.jsonl`, one JSON line each. |
+| `DataExport.swift` | "Export my data": bundles commitments, sessions and the event log, plus app and macOS versions, into one JSON file in Downloads. Optionally swaps typed text for stable codes like `title-3f2a`. No networking. |
 | `AudioMuter.swift` | Mutes sound when the Start card appears and restores it, but never unmutes sound you muted yourself. |
 | `Launcher.swift` | Opens launch targets (web links in the session browser), and works out which apps a session allows. |
 | `BrowserTabs.swift` | Reads the current tab and switches tabs in Safari, Chrome, Arc, Brave and Edge via AppleScript; knows which browsers (Firefox, Zen…) can't be read. |
@@ -96,7 +100,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `Window/AllowRulesEditor.swift` | The editable list of allowed apps and website rules (with distraction warnings), shared by the editor and Settings; also the note about Firefox-style browsers. |
 | `Window/PresetsSection.swift` | The "Allowlist presets" part of Settings: add, rename, edit, delete presets. |
 | `Window/HistoryPage.swift` | History tab: kept / skipped / broke-early counts for 14 days, and each session with its outcome and note. |
-| `Window/SettingsPage.swift` | Settings tab: browser, Focus shortcuts, brown noise, testing buttons, Quit. |
+| `Window/SettingsPage.swift` | Settings tab: browser, Focus shortcuts, brown noise, Your data (export, with the anonymise toggle), testing buttons, Quit. |
 | `FocusShortcutHelp.swift` | The one-time "Focus didn't turn on" message with steps to create the shortcut, and the message when it fails to run. |
 | `ConflictWarning.swift` | The "clashes with another session" alert. |
 | `EndOfSessionView.swift` | The end-of-session window: Done / Partly / Didn't (unless ended early) and "Where did you leave off?", with any parked thoughts alongside (Make commitment / Dismiss). |
