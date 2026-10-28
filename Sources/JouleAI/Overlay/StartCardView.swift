@@ -14,6 +14,8 @@ struct StartCardView: View {
     /// The note from last time, if there is one.
     let leftOffNote: String?
     let canReschedule: Bool
+    /// e.g. "Google Meet" when the calendar event has a meeting link.
+    var meetingService: String? = nil
     let onStart: () -> Void
     let onReschedule: () -> Void
     let onCancel: () -> Void
@@ -36,6 +38,11 @@ struct StartCardView: View {
                     .font(Theme.Font.display)
                     .foregroundStyle(Theme.text)
                     .fixedSize(horizontal: false, vertical: true)
+                if let meetingService {
+                    Label("Meeting link found: will open at start (\(meetingService))", systemImage: "video")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.accent)
+                }
             }
 
             if let leftOffNote, !leftOffNote.isEmpty {

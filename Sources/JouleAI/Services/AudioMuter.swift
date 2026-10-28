@@ -30,6 +30,13 @@ final class AudioMuter {
         didMute = false
     }
 
+    /// Turns sound on no matter who muted it. Used only for meeting sessions,
+    /// where a call without sound is useless.
+    func forceUnmute() {
+        run("set volume without output muted")
+        didMute = false
+    }
+
     // MARK: - Private
 
     /// Asks macOS whether output is muted. Returns `nil` if the script failed.

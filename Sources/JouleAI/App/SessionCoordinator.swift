@@ -65,7 +65,10 @@ final class SessionCoordinator {
     @ObservationIgnored private let audio = AudioMuter()
     @ObservationIgnored private let noise = BrownNoisePlayer()
     @ObservationIgnored private let endWindow = EndOfSessionWindowController()
+    @ObservationIgnored private let keepAwake = KeepAwake()
     @ObservationIgnored private let parkingLot = ParkingLotController()
+    /// ⌃⌥⌘⎋, always registered: ends everything if you're ever stuck.
+    @ObservationIgnored private var emergencyHotKey: GlobalHotKey?
     /// ⌘⇧J, registered only while a session runs.
     @ObservationIgnored private var parkingLotHotKey: GlobalHotKey?
     /// Waits a moment after typing stops before saving the parking lot.
@@ -103,6 +106,8 @@ final class SessionCoordinator {
         overlay.onChange = { [weak self] change, trigger in self?.logOverlay(change, trigger: trigger) }
 
         parkingLotHotKey = GlobalHotKey { [weak self] in self?.toggleParkingLot() }
+        emergencyHotKey = GlobalHotKey.emergencyExit { [weak self] in self?.emergencyExit() }
+        emergencyHotKey?.register()
         parkingLot.onTextChange = { [weak self] text in self?.parkedTextChanged(text) }
 
         notifier.onAction = { [weak self] action, id in
@@ -123,7 +128,10 @@ final class SessionCoordinator {
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.audio.restore() }
+            MainActor.assumeIsolated {
+                self?.audio.restore()
+                self?.releaseKeepAwake(reason: "JouleAI quit")
+            }
         }
     }
 
@@ -270,6 +278,7 @@ final class SessionCoordinator {
             durationMinutes: commitment.durationMinutes,
             leftOffNote: noteOverride ?? appState.lastLeftOffNote(for: commitment),
             canReschedule: commitment.canReschedule,
+            meetingService: commitment.meetingLink.flatMap(MeetingLink.init(string:))?.service.rawValue,
             onStart: { [weak self] in self?.start(commitment, isTest: isTest) },
             onReschedule: { [weak self] in self?.rescheduleFromOverlay(commitment, isTest: isTest) },
             onCancel: { [weak self] in self?.cancelFromOverlay(commitment, isTest: isTest) }
@@ -317,6 +326,7 @@ final class SessionCoordinator {
         audio.restore()
 
         let now = Date()
+        let meeting = commitment.meetingLink.flatMap(MeetingLink.init(string:))
         let session = Session(commitmentId: commitment.id,
                               commitmentTitle: commitment.title,
                               startedAt: now)
@@ -328,17 +338,34 @@ final class SessionCoordinator {
             session: session,
             endsAt: now.addingTimeInterval(TimeInterval(commitment.durationMinutes * 60)),
             allowlist: SessionAllowlist(commitment: commitment,
-                                        preset: appState.preset(withID: commitment.presetID)),
+                                        preset: appState.preset(withID: commitment.presetID),
+                                        meeting: meeting),
             isTest: isTest
         )
         tabCheckPausedUntil = now.addingTimeInterval(5)
 
-        Launcher.open(commitment.launchTargets)
+        // A meeting link from the calendar event opens along with the other targets.
+        var targets = commitment.launchTargets
+        if let meeting {
+            targets.append(LaunchTarget(kind: .url, value: meeting.url.absoluteString, label: meeting.service.rawValue))
+        }
+        Launcher.open(targets)
+
+        // Keep the Mac awake for the whole session.
+        if keepAwake.turnOn() {
+            EventLog.record(.caffeinateOn, commitment, detail: "Joule focus session", isTest: isTest)
+        }
 
         if AppSettings.focusEnabled {
             runShortcut(AppSettings.focusOnShortcut, turningOn: true, for: commitment, isTest: isTest)
         }
-        if AppSettings.brownNoiseEnabled {
+        if let meeting {
+            // A call needs sound: no brown noise, and unmute even if you'd muted.
+            audio.forceUnmute()
+            EventLog.record(.meetingSession, commitment,
+                            detail: "\(meeting.service.rawValue): opened \(meeting.url.absoluteString); allowed \(meeting.host); brown noise off; sound on",
+                            isTest: isTest)
+        } else if AppSettings.brownNoiseEnabled {
             stopNoisePreview()
             noise.start(volume: AppSettings.brownNoiseVolume)
         }
@@ -615,6 +642,8 @@ final class SessionCoordinator {
         overlay.hide(reason: outcome == .brokeEarly ? "broke early" : "session ended")
         stopLock()
         noise.stop()
+        releaseKeepAwake(reason: outcome == .brokeEarly ? (breakReason ?? "broke early") : "session ended",
+                         commitment: active.commitment, isTest: active.isTest)
         if AppSettings.focusEnabled {
             runShortcut(AppSettings.focusOffShortcut, turningOn: false, for: active.commitment, isTest: active.isTest)
         }
@@ -634,6 +663,42 @@ final class SessionCoordinator {
         remainingSeconds = 0
         askForReflection(active.session, commitment: active.commitment, isTest: active.isTest)
         checkForDueCommitment()
+    }
+
+    // MARK: - Keep awake
+
+    /// Lets the Mac sleep again, and logs it. Called on every way a session
+    /// can end (time up, broke early, emergency exit) and when JouleAI quits.
+    private func releaseKeepAwake(reason: String, commitment: Commitment? = nil, isTest: Bool = false) {
+        guard keepAwake.isOn else { return }
+        keepAwake.turnOff()
+        if let commitment = commitment ?? activeSession?.commitment {
+            EventLog.record(.caffeinateOff, commitment, detail: reason, isTest: isTest)
+        }
+    }
+
+    // MARK: - Emergency exit
+
+    /// ⌃⌥⌘⎋: the way out if anything ever goes wrong. No confirmation, because
+    /// if the screen is stuck a dialog might not be reachable either.
+    /// - During a session: ends it now (recorded as broke early).
+    /// - On the Start card: closes it (recorded as cancelled).
+    /// Either way every overlay panel is removed and Cmd+Tab and the Dock come back.
+    func emergencyExit() {
+        let firing = firingCommitment
+        guard activeSession != nil || firing != nil || overlay.isVisible else { return }
+
+        if let active = activeSession {
+            EventLog.record(.emergencyExit, active.commitment, detail: "ended the session", isTest: active.isTest)
+            finishSession(outcome: .brokeEarly, breakReason: "Emergency exit (⌃⌥⌘⎋)")
+        } else if let firing {
+            EventLog.record(.emergencyExit, firing, detail: "closed the Start card")
+            // A real commitment is cancelled so it doesn't fire again straight away.
+            if appState.commitment(withID: firing.id) != nil { cancel(firing, from: "emergency exit") }
+            closeStartCard()
+        }
+        overlay.forceHide(reason: "emergency exit")
+        audio.restore()
     }
 
     // MARK: - Parking lot

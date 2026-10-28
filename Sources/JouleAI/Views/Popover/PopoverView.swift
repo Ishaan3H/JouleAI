@@ -49,7 +49,8 @@ struct PopoverView: View {
                 leftOffNote: appState.lastLeftOffNote(for: next),
                 showHeadsUpActions: isLeadUp,
                 saidReady: next.headsUpResponse == .ready,
-                canPush: next.canReschedule
+                canPush: next.canReschedule,
+                meetingService: next.meetingLink.flatMap(MeetingLink.init(string:))?.service.rawValue
             ))
         } else {
             hero = .nothingCommitted(hasItems: items.contains { $0.endTime > now })

@@ -38,6 +38,11 @@ struct Commitment: Codable, Identifiable, Hashable {
     /// (older field; new rules go in `allowRules`).
     var extraAllowedApps: [String] = []
 
+    /// A Google Meet / Zoom / Teams link found in the calendar event's URL,
+    /// location or notes. Opened at Start; the session then allows that
+    /// meeting site, skips brown noise and turns sound on.
+    var meetingLink: String?
+
     /// A saved allowlist preset this commitment uses (e.g. "Coding"), if any.
     var presetID: UUID?
     /// Apps and website rules allowed during this commitment's sessions,

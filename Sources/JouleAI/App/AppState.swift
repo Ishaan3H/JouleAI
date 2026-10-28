@@ -142,6 +142,21 @@ final class AppState {
                 ))
                 changed = true
             }
+
+            // Look for a meeting link: the event's URL first, then its
+            // location, then its notes. The first one found is used.
+            let meeting = MeetingLink.find(in: [event.url?.absoluteString, event.location, event.notes])
+            if let index = commitments.lastIndex(where: {
+                $0.calendarEventIdentifier == identifier &&
+                Calendar.current.isDate($0.startTime, inSameDayAs: event.startDate)
+            }), commitments[index].meetingLink != meeting?.url.absoluteString {
+                commitments[index].meetingLink = meeting?.url.absoluteString
+                changed = true
+                if let meeting {
+                    EventLog.record(.meetingLinkFound, commitments[index],
+                                    detail: "\(meeting.service.rawValue): \(meeting.url.absoluteString)")
+                }
+            }
         }
         if changed { persist() }
     }

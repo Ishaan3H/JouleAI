@@ -66,6 +66,8 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `CalendarService.swift` | The only file that talks to the Calendar (EventKit): asks permission and reads today's timed events. |
 | `WindowTitleReader.swift` | Reads the front window title of Firefox-based browsers (Zen, Firefox) through the Accessibility API, and asks for that permission. |
 | `GlobalHotKey.swift` | A system-wide shortcut (⌘⇧J for the parking lot) using macOS's hotkey API, which needs no Accessibility permission. |
+| `KeepAwake.swift` | Keeps the Mac from idle-sleeping during a session with an IOKit power assertion ("Joule focus session"), released on every way a session ends and when JouleAI quits. |
+| `MeetingLink.swift` | Finds a Google Meet, Zoom or Teams link in a calendar event's URL, location or notes (first one wins), and knows which site and call app to allow. |
 | `Scheduler.swift` | A 30-second timer plus a wake-from-sleep listener. Just says "check now". |
 | `Notifier.swift` | macOS notifications: the heads-up with *I'll be ready / Push 30 min / Not today*, and the plain 5-minute reminder. Passes button clicks back to the coordinator. |
 | `EventLog.swift` | Appends timestamped events to `events.jsonl`, one JSON line each. |

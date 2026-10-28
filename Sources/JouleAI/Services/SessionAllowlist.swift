@@ -32,9 +32,19 @@ struct SessionAllowlist {
         "youtube.com", "instagram.com", "x.com", "twitter.com", "reddit.com", "tiktok.com", "facebook.com",
     ]
 
-    init(commitment: Commitment, preset: AllowPreset?) {
+    init(commitment: Commitment, preset: AllowPreset?, meeting: MeetingLink? = nil) {
         func addApp(_ id: String?) {
             if let id, !apps.contains(id) { apps.append(id) }
+        }
+
+        // 0. A meeting from the calendar event: only that meeting site (e.g.
+        //    meet.google.com), the browser it opens in, and the call app it may
+        //    hand over to (Zoom, Teams). Its tab is "your" tab for Back to task.
+        if let meeting {
+            addApp(Launcher.sessionBrowser.bundleID)
+            meeting.appBundleIDs.forEach { addApp($0) }
+            if let site = AllowRule.site(from: meeting.host) { siteRules.append(site) }
+            targetLinks.append(meeting.url)
         }
 
         // 1. Launch targets.

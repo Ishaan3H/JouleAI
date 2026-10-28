@@ -30,6 +30,11 @@ struct JouleAIEvent: Codable {
         case lockOverlayShown       // lock overlay appeared from hidden; detail = what caused it (app bundle ID, tab host, or blocked browser)
         case lockOverlayReasserted  // already up, brought back to front after an app switch; detail = the bundle ID
         case lockOverlayHidden      // taken down; detail = why (back to task, session ended, broke early)
+        case emergencyExit          // ⌃⌥⌘⎋ pressed: overlay removed, session ended as broke early
+        case caffeinateOn           // power assertion taken: the Mac won't idle-sleep during the session
+        case caffeinateOff          // power assertion released; detail = why
+        case meetingLinkFound       // a meeting link was detected in a calendar event; detail = service and link
+        case meetingSession         // a session started with a meeting: link opened, brown noise off, sound on
         case backToTask          // "Back to task" pressed on the lock card
     }
 

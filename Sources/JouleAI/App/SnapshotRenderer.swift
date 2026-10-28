@@ -94,6 +94,9 @@ enum SnapshotRenderer {
             ("overlay-start", AnyView(backdrop(StartCardView(
                 title: "Write thesis intro", startTime: now, durationMinutes: 50, leftOffNote: note,
                 canReschedule: true, onStart: {}, onReschedule: {}, onCancel: {})))),
+            ("overlay-start-meeting", AnyView(backdrop(StartCardView(
+                title: "Weekly sync with Prof. Lee", startTime: now, durationMinutes: 30, leftOffNote: nil,
+                canReschedule: true, meetingService: "Google Meet", onStart: {}, onReschedule: {}, onCancel: {})))),
             ("overlay-lock", AnyView(backdrop(LockCardView(
                 title: "Write thesis intro", endsAt: now.addingTimeInterval(18 * 60 + 42),
                 detail: "That tab isn’t part of this session.", onBackToTask: {}, onBreak: { _ in })))),

@@ -26,6 +26,8 @@ struct PopoverModel {
         let showHeadsUpActions: Bool
         let saidReady: Bool
         let canPush: Bool
+        /// e.g. "Google Meet" when the calendar event has a meeting link.
+        var meetingService: String? = nil
     }
 
     /// One of today's other items in the list below the hero.
@@ -179,6 +181,12 @@ struct NextUpView: View {
             } else {
                 (Text("in ") + Text(item.startTime, style: .relative))
                     .font(Theme.Font.countdownSmall)
+                    .foregroundStyle(Theme.accent)
+            }
+
+            if let service = item.meetingService {
+                Label("Meeting link found: will open at start (\(service))", systemImage: "video")
+                    .font(Theme.Font.detail.weight(.medium))
                     .foregroundStyle(Theme.accent)
             }
 

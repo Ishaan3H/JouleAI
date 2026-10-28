@@ -45,6 +45,7 @@ struct SettingsPage: View {
                 parkingLotSection
                 noiseSection
                 dataSection
+                safetySection
                 debugSection
                 Button("Quit JouleAI") { NSApp.terminate(nil) }
                     .buttonStyle(TextButtonStyle(color: Theme.danger))
@@ -193,6 +194,15 @@ struct SettingsPage: View {
                 Button("Export my data") { DataExport.runAndReveal(anonymise: exportAnonymised) }
                     .buttonStyle(OutlineButtonStyle())
                 Spacer()
+            }
+        }
+    }
+
+    private var safetySection: some View {
+        group("If you’re ever stuck") {
+            SettingRow(title: "Emergency exit: ⌃⌥⌘⎋",
+                       subtitle: "Control-Option-Command-Escape works anytime. It ends the session (recorded as broke early), removes the overlay and gives back Cmd+Tab and the Dock.") {
+                EmptyView()
             }
         }
     }

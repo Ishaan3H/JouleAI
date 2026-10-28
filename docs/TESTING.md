@@ -81,6 +81,12 @@ button.
 To uninstall, quit it, drag JouleAI.app from Applications to the Trash, and
 delete `~/Library/Application Support/JouleAI/` if you want your data gone too.
 
+## If you're ever stuck
+
+Press **Control-Option-Command-Escape** (⌃⌥⌘⎋) at any time. It ends the session
+straight away (it's recorded as "broke early"), removes the blur and gives back
+Cmd-Tab and the Dock. You never need to restart your Mac to get out of JouleAI.
+
 ## Something went wrong?
 
 Tell us what you were doing and what happened. A screenshot helps. If you're

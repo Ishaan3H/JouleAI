@@ -102,6 +102,21 @@ final class OverlayController {
         onChange?(.hidden, reason)
     }
 
+    /// The emergency exit: take every panel down and give back Cmd+Tab and the
+    /// Dock, whatever state things are in, even if the overlay thinks it's hidden.
+    func forceHide(reason: String) {
+        let wasVisible = isVisible
+        isVisible = false
+        for panel in panels.values { panel.orderOut(nil) }
+        if let saved = savedPresentationOptions {
+            NSApp.presentationOptions = saved
+            savedPresentationOptions = nil
+        } else if NSApp.presentationOptions.contains(.disableProcessSwitching) {
+            NSApp.presentationOptions = []
+        }
+        if wasVisible { onChange?(.hidden, reason) }
+    }
+
     /// Makes the card's panel the window that receives key presses.
     func grabKeyboard() {
         guard isVisible else { return }
