@@ -98,10 +98,15 @@ enum Launcher {
         return result
     }
 
-    /// Bits of macOS that can briefly become the "front app" on their own
-    /// (password prompts, notifications, the login window). Always allowed,
-    /// so they never trigger the lock.
+    /// Bits of macOS that are always allowed during a session, so they never
+    /// trigger the lock:
+    /// - **Finder**: macOS falls back to it whenever an app quits or its last
+    ///   window closes, and clicking the menu bar or Cmd+Tabbing to a minimised
+    ///   app can bring it forward. Blocking it could trap you behind the lock.
+    /// - Things that briefly become the "front app" on their own: password
+    ///   prompts, notifications, the login window, Control Centre, Spotlight.
     static let systemApps: Set<String> = [
+        "com.apple.finder",
         "com.apple.loginwindow",
         "com.apple.SecurityAgent",
         "com.apple.UserNotificationCenter",

@@ -175,7 +175,7 @@ struct CommitmentEditorView: View {
     private var allowSection: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             SectionLabel("Allowed during the session")
-            Text("What opens on Start is always allowed. Add a preset, and any other apps or sites you’ll need.")
+            Text("What opens on Start is always allowed, and so is Finder. Add a preset, and any other apps or sites you’ll need.")
                 .font(Theme.Font.detail)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
