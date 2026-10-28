@@ -70,7 +70,7 @@ def count(export):
             c["completed"] += 1
         elif kind == "brokeOut":
             c["broke_early"] += 1
-        elif kind == "lockShown":
+        elif kind in ("lockShown", "lockOverlayShown"):
             c["lock_shown"] += 1
         elif kind == "backToTask":
             c["back_to_task"] += 1

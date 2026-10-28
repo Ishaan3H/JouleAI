@@ -82,7 +82,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | File | What it does |
 |---|---|
 | `OverlayPanel.swift` | One borderless, blurred, full-screen window per display, above everything, on every Space. Takes the keyboard and ignores Escape and Cmd-shortcuts. |
-| `OverlayController.swift` | Covers every display, puts the card on the main one, takes the keyboard back if anything grabs it, and rebuilds if a monitor is plugged in. |
+| `OverlayController.swift` | Long-lived overlay: one panel per display, created once and reused (the blur view stays alive). Showing again just swaps the card; frames change only when displays change. Hides the Dock and blocks Cmd+Tab while up (Force Quit still works). |
 | `StartCardView.swift` | The "It's time" card: big title, last note, Start, and quiet Reschedule / Cancel that unlock after 30 s. |
 | `LockCardView.swift` | The "You're in a committed session" card: time left, Back to task, and the slow End-early flow (60 s wait, typed phrase, optional reason). |
 

@@ -26,7 +26,10 @@ struct JouleAIEvent: Codable {
         case parkedDismissed     // a parking-lot item was dismissed
         case focusShortcut       // a Focus shortcut was run (or found missing), with the result
         case browserBlocked      // a browser was blocked: its pages couldn't be checked
-        case lockShown           // the lock card appeared; detail says what caused it (app, tab host, or blocked browser)
+        case lockShown           // (older logs) the lock card appeared; now lockOverlayShown
+        case lockOverlayShown       // lock overlay appeared from hidden; detail = what caused it (app bundle ID, tab host, or blocked browser)
+        case lockOverlayReasserted  // already up, brought back to front after an app switch; detail = the bundle ID
+        case lockOverlayHidden      // taken down; detail = why (back to task, session ended, broke early)
         case backToTask          // "Back to task" pressed on the lock card
     }
 

@@ -1,136 +1,235 @@
 import AppKit
+import Observation
 import SwiftUI
+
+/// What the overlay is currently showing. The panels' SwiftUI views watch
+/// this, so changing the card never rebuilds a window.
+@MainActor
+@Observable
+final class OverlayContent {
+    var card: AnyView?
+    /// Changes each time the overlay appears from hidden, so a new card starts
+    /// fresh (its countdowns and text fields reset) instead of reusing old state.
+    var showID = UUID()
+}
 
 /// Shows and hides the blur overlay across every connected display.
 ///
-/// Every screen gets an `OverlayPanel` (just blur). The main screen's panel also
-/// hosts a SwiftUI "card" in the middle. The card is passed in by the caller, so
-/// the same overlay shows the "time to start" card and the "you're in a
-/// committed session" lock card.
+/// The panels are long-lived: one per screen, created the first time the
+/// overlay is needed and then kept. Showing it again only swaps the card and
+/// brings the existing panels forward, so the blur (an NSVisualEffectView that
+/// stays alive inside each panel) never has to redraw from scratch, and the
+/// card never jumps. Panel frames change only when displays change.
+///
+/// While visible it also asks macOS to hide the Dock and block Cmd+Tab
+/// (Force Quit still works).
 @MainActor
 final class OverlayController {
 
-    private var panels: [OverlayPanel] = []
-    /// The panel with the card; the only one that takes keyboard input.
-    private var keyPanel: OverlayPanel?
-    /// The card currently shown, kept so we can rebuild if displays change.
-    private var currentCard: AnyView?
-    /// Notification observers that only matter while the overlay is visible.
-    private var visibleObservers: [NSObjectProtocol] = []
+    /// What happened, for the event log: shown from hidden, re-asserted while
+    /// already visible, or hidden. `trigger` is what caused it (e.g. a bundle ID).
+    enum Change { case shown, reasserted, hidden }
+    var onChange: ((Change, String?) -> Void)?
 
-    var isVisible: Bool { !panels.isEmpty }
+    private let content = OverlayContent()
+    /// One panel per screen, keyed by the display's ID.
+    private var panels: [CGDirectDisplayID: OverlayPanel] = [:]
+    /// The panel with the card (on the menu-bar screen); the only one that takes keys.
+    private var keyPanel: OverlayPanel?
+    private var keyScreenID: CGDirectDisplayID?
+
+    private(set) var isVisible = false
+    /// The presentation options in force before we hid the Dock / blocked Cmd+Tab.
+    private var savedPresentationOptions: NSApplication.PresentationOptions?
 
     init() {
-        // If a display is plugged in or removed while the overlay is up,
-        // rebuild so every screen stays covered.
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let card = self.currentCard else { return }
-                self.show(card)
+        let center = NotificationCenter.default
+
+        // Displays plugged in, removed or rearranged: re-fit the panels (the
+        // only time their frames change).
+        center.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                           object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refitPanels() }
+        }
+
+        // JouleAI became the active app while the overlay is up: that's the
+        // moment macOS lets us block Cmd+Tab.
+        center.addObserver(forName: NSApplication.didBecomeActiveNotification,
+                           object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isVisible else { return }
+                self.lockAppSwitching()
             }
         }
     }
+
+    // MARK: - Show / hide
 
     /// Covers every screen and shows `card` centred on the main screen.
-    /// Calling it again while visible swaps in the new card.
-    func show<Card: View>(_ card: Card) {
-        hide()
-        let card = AnyView(card)   // AnyView lets us store any kind of SwiftUI view
-        currentCard = card
-
-        // The first screen in the list is the one with the menu bar.
-        let mainScreen = NSScreen.screens.first
-
-        for screen in NSScreen.screens {
-            let isMain = (screen == mainScreen)
-            let panel = OverlayPanel(screen: screen, acceptsKeyboard: isMain)
-
-            if isMain, let blur = panel.contentView {
-                // NSHostingView puts a SwiftUI view inside an AppKit view.
-                let host = NSHostingView(rootView: OverlayBackdrop(content: card))
-                host.frame = blur.bounds
-                host.autoresizingMask = [.width, .height]
-                blur.addSubview(host)
-                keyPanel = panel
-            }
-
-            panel.orderFrontRegardless()
-            panels.append(panel)
+    /// If the overlay is already up, this swaps the card and re-asserts it.
+    func show<Card: View>(_ card: Card, trigger: String? = nil) {
+        content.card = AnyView(card)
+        if isVisible {
+            reassert(trigger: trigger)
+            return
         }
-
-        // Ask to become the front app (macOS may decline; the non-activating
-        // panel takes the keyboard either way).
-        NSApp.activate()
-        grabKeyboard()
-        startHoldingKeyboard()
+        content.showID = UUID()
+        ensurePanels()
+        isVisible = true
+        for panel in panels.values {
+            panel.alphaValue = 1        // no fade: it's simply there
+            panel.orderFrontRegardless()
+        }
+        bringForward()
+        onChange?(.shown, trigger)
     }
 
-    /// Removes the overlay from every screen.
-    func hide() {
-        for observer in visibleObservers {
-            NotificationCenter.default.removeObserver(observer)
-            NSWorkspace.shared.notificationCenter.removeObserver(observer)
-        }
-        visibleObservers.removeAll()
+    /// Already visible: bring the existing panels back to the front and take
+    /// the keyboard. Creates nothing.
+    func reassert(trigger: String?) {
+        guard isVisible else { return }
+        for panel in panels.values { panel.orderFrontRegardless() }
+        bringForward()
+        onChange?(.reasserted, trigger)
+    }
 
-        for panel in panels {
-            panel.orderOut(nil)
-        }
-        panels.removeAll()
-        keyPanel = nil
-        currentCard = nil
+    /// Hides the overlay. The panels are kept for next time.
+    func hide(reason: String? = nil) {
+        guard isVisible else { return }
+        isVisible = false
+        for panel in panels.values { panel.orderOut(nil) }
+        restoreAppSwitching()
+        onChange?(.hidden, reason)
     }
 
     /// Makes the card's panel the window that receives key presses.
     func grabKeyboard() {
+        guard isVisible else { return }
         keyPanel?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - Private
 
-    /// While visible, take the keyboard straight back whenever something else
-    /// grabs it — e.g. Cmd+Tab to another app, or that app opening a window.
-    private func startHoldingKeyboard() {
-        guard let keyPanel else { return }
+    private func bringForward() {
+        // Ask to become the front app (macOS may decline; the non-activating
+        // panel takes the keyboard either way).
+        NSApp.activate()
+        keyPanel?.makeKey()
+        lockAppSwitching()
+    }
 
-        let lostKey = NotificationCenter.default.addObserver(
+    /// The display ID macOS uses for a screen.
+    private static func displayID(of screen: NSScreen) -> CGDirectDisplayID {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+    }
+
+    /// Creates any missing panels (first use, or a new display). Never called
+    /// to replace panels that already exist.
+    private func ensurePanels() {
+        // The first screen in the list is the one with the menu bar.
+        let mainID = NSScreen.screens.first.map(Self.displayID)
+
+        for screen in NSScreen.screens {
+            let id = Self.displayID(of: screen)
+            if let existing = panels[id] {
+                existing.place(on: screen)
+                continue
+            }
+            let isMain = (id == mainID)
+            let panel = OverlayPanel(screen: screen, acceptsKeyboard: isMain)
+            if isMain { attachCard(to: panel) }
+            panels[id] = panel
+        }
+        keyScreenID = mainID
+        keyPanel = mainID.flatMap { panels[$0] }
+        watchKeyboard()
+    }
+
+    /// Puts the SwiftUI card view inside a panel, over its blur.
+    private func attachCard(to panel: OverlayPanel) {
+        guard let blur = panel.contentView else { return }
+        let host = NSHostingView(rootView: OverlayRoot(content: content))
+        // Don't let SwiftUI resize the window to fit the card: the panel is
+        // always exactly the screen, and the card is centred inside it.
+        host.sizingOptions = []
+        host.frame = blur.bounds
+        host.autoresizingMask = [.width, .height]
+        blur.addSubview(host)
+    }
+
+    /// Displays changed: drop panels for screens that are gone, add panels for
+    /// new ones, and re-fit the rest to their screen's full frame.
+    private func refitPanels() {
+        guard !panels.isEmpty else { return }
+        let screens = NSScreen.screens
+        let ids = Set(screens.map(Self.displayID))
+        let mainID = screens.first.map(Self.displayID)
+
+        for (id, panel) in panels where !ids.contains(id) {
+            panel.orderOut(nil)
+            panels[id] = nil
+        }
+        // The menu-bar screen changed: the card has to move to the new one.
+        if mainID != keyScreenID {
+            panels.values.forEach { $0.orderOut(nil) }
+            panels.removeAll()
+        }
+        ensurePanels()
+        if isVisible {
+            for panel in panels.values { panel.orderFrontRegardless() }
+            keyPanel?.makeKey()
+        }
+    }
+
+    /// If something takes the keyboard from the card while the overlay is up,
+    /// take it back, unless it's another JouleAI window (the parking lot).
+    private var keyObserver: NSObjectProtocol?
+    private func watchKeyboard() {
+        if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) }
+        guard let keyPanel else { return }
+        keyObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification, object: keyPanel, queue: .main
         ) { [weak self] _ in
             // A tiny delay lets the other app finish its switch before we take
             // focus back; otherwise it can win the race.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                Task { @MainActor in
-                    // If another JouleAI window took the keyboard (the parking
-                    // lot), let it keep it; only take it back from other apps.
+                MainActor.assumeIsolated {
                     if let key = NSApp.keyWindow, !(key is OverlayPanel) { return }
                     self?.grabKeyboard()
                 }
             }
         }
+    }
 
-        let appSwitched = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                Task { @MainActor in self?.grabKeyboard() }
-            }
-        }
+    /// Hides the Dock and blocks Cmd+Tab. macOS only allows this while JouleAI
+    /// is the active app; if it isn't yet, `didBecomeActive` tries again.
+    /// Force Quit (Cmd+Option+Esc) is deliberately left working.
+    private func lockAppSwitching() {
+        guard NSApp.isActive else { return }
+        if savedPresentationOptions == nil { savedPresentationOptions = NSApp.presentationOptions }
+        NSApp.presentationOptions = [.hideDock, .disableProcessSwitching]
+    }
 
-        visibleObservers = [lostKey, appSwitched]
+    private func restoreAppSwitching() {
+        guard let saved = savedPresentationOptions else { return }
+        NSApp.presentationOptions = saved
+        savedPresentationOptions = nil
     }
 }
 
-/// Darkens the blur slightly and centres the card.
-private struct OverlayBackdrop: View {
-    let content: AnyView
+/// The SwiftUI side of the card panel: dims the blur slightly and keeps the
+/// card dead centre at any size, so it can't jump or get cut off.
+private struct OverlayRoot: View {
+    let content: OverlayContent
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.25)
-            content
+            if let card = content.card {
+                card.id(content.showID)
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
     }
 }

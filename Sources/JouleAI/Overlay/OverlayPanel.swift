@@ -43,7 +43,7 @@ final class OverlayPanel: NSPanel {
         isMovable = false
         hidesOnDeactivate = false      // stay visible even if another app gets focus
         isReleasedWhenClosed = false   // OverlayController manages the lifetime
-        setFrame(screen.frame, display: true)
+        place(on: screen)
 
         // The blur. `.behindWindow` blurs the other windows and desktop below us.
         let blur = NSVisualEffectView(frame: NSRect(origin: .zero, size: screen.frame.size))
@@ -52,6 +52,13 @@ final class OverlayPanel: NSPanel {
         blur.state = .active           // always blurred, even when not focused
         blur.autoresizingMask = [.width, .height]
         contentView = blur
+    }
+
+    /// Sizes the panel to the screen's full frame (menu bar and Dock included),
+    /// not `visibleFrame`, so it covers everything. Called once at creation and
+    /// again only when displays change.
+    func place(on screen: NSScreen) {
+        if frame != screen.frame { setFrame(screen.frame, display: false) }
     }
 
     /// Borderless windows normally can't receive keyboard focus. The card's

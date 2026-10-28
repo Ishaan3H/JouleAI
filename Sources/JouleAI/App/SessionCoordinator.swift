@@ -74,7 +74,10 @@ final class SessionCoordinator {
     @ObservationIgnored private var scheduler: Scheduler?
     /// Ticks every second for the countdowns (session time left, time until next).
     @ObservationIgnored private var clockTimer: Timer?
-    @ObservationIgnored private var appSwitchObserver: NSObjectProtocol?
+    /// True while a session's lock is armed (between Start and the end).
+    @ObservationIgnored private var lockArmed = false
+    /// The latest app switch, waiting out the 150 ms debounce.
+    @ObservationIgnored private var pendingActivation: DispatchWorkItem?
     /// True while the lock card (not the Start card) is on screen.
     @ObservationIgnored private var isLockShowing = false
     /// Apps you switched to that aren't part of the session. "Back to task" hides them.
@@ -87,6 +90,17 @@ final class SessionCoordinator {
 
     init(appState: AppState) {
         self.appState = appState
+
+        // One app-switch listener for the life of the app. Closing a window or
+        // quitting an app can fire several switches in a row; they're debounced
+        // so the burst is handled once.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated { self?.activationArrived(app) }
+        }
+        overlay.onChange = { [weak self] change, trigger in self?.logOverlay(change, trigger: trigger) }
 
         parkingLotHotKey = GlobalHotKey { [weak self] in self?.toggleParkingLot() }
         parkingLot.onTextChange = { [weak self] text in self?.parkedTextChanged(text) }
@@ -377,23 +391,69 @@ final class SessionCoordinator {
 
     // MARK: - 3. The lock
 
-    /// Starts watching which app is in front.
+    /// Arms the lock: from now until the session ends, switching to an app
+    /// that isn't allowed brings up the lock card.
     private func startLock() {
-        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] notification in
-            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            MainActor.assumeIsolated { self?.appDidActivate(app) }
-        }
+        lockArmed = true
     }
 
     private func stopLock() {
-        if let appSwitchObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(appSwitchObserver)
-        }
-        appSwitchObserver = nil
+        lockArmed = false
+        pendingActivation?.cancel()
         isLockShowing = false
         strayApps.removeAll()
+    }
+
+    /// App switches that never count: JouleAI itself, and system processes
+    /// that briefly become "active" (the Dock, Mission Control, Spotlight,
+    /// Control Centre, notifications, password prompts).
+    private static let ignoredActivations: Set<String> = [
+        "com.apple.dock", "com.apple.WindowManager", "com.apple.Spotlight", "com.apple.loginwindow",
+        "com.apple.controlcenter", "com.apple.notificationcenterui", "com.apple.SecurityAgent",
+        "com.apple.UserNotificationCenter",
+    ]
+
+    /// Every app switch lands here first. It waits 150 ms and only the last
+    /// switch in a burst is handled.
+    private func activationArrived(_ app: NSRunningApplication?) {
+        guard let app, let bundleID = app.bundleIdentifier,
+              bundleID != Bundle.main.bundleIdentifier,
+              !Self.ignoredActivations.contains(bundleID) else { return }
+        pendingActivation?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.handleActivation(app, bundleID: bundleID) }
+        }
+        pendingActivation = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
+    /// One (debounced) app switch.
+    /// - Overlay already up (Start card or lock): just re-assert it. Nothing
+    ///   new is created, and an End-early countdown in progress is untouched.
+    /// - Otherwise, during a session: lock if the app isn't allowed.
+    private func handleActivation(_ app: NSRunningApplication, bundleID: String) {
+        if overlay.isVisible {
+            if let active = activeSession, !active.allowlist.allowsApp(bundleID), !strayApps.contains(app) {
+                strayApps.append(app)
+            }
+            overlay.reassert(trigger: bundleID)
+            return
+        }
+        guard lockArmed else { return }
+        appDidActivate(app)
+    }
+
+    /// Writes the lock overlay's shown / reasserted / hidden events, with what
+    /// triggered them, so it's easy to confirm it fires once per switch.
+    private func logOverlay(_ change: OverlayController.Change, trigger: String?) {
+        guard isLockShowing, let active = activeSession else { return }
+        let kind: JouleAIEvent.Kind
+        switch change {
+        case .shown: kind = .lockOverlayShown
+        case .reasserted: kind = .lockOverlayReasserted
+        case .hidden: kind = .lockOverlayHidden
+        }
+        EventLog.record(kind, active.commitment, detail: trigger, isTest: active.isTest)
     }
 
     /// Runs every second. If a readable browser (Safari, Chrome, Arc, Brave,
@@ -487,8 +547,6 @@ final class SessionCoordinator {
         guard !active.allowlist.allowsApp(bundleID), let app else { return }
         if !strayApps.contains(app) { strayApps.append(app) }
 
-        // Already showing the lock? Leave it alone, so an End-early countdown in
-        // progress isn't reset. (The overlay takes the keyboard back by itself.)
         guard !isLockShowing else { return }
         showLock(tabIn: nil, cause: "app: \(bundleID) (\(app.localizedName ?? "unknown"))")
     }
@@ -498,8 +556,7 @@ final class SessionCoordinator {
     /// blocked browser); `detail` overrides the explanation line on the card.
     private func showLock(tabIn browser: BrowserTabs.Browser?, cause: String, detail: String? = nil) {
         guard let active = activeSession else { return }
-        EventLog.record(.lockShown, active.commitment, detail: cause, isTest: active.isTest)
-        isLockShowing = true
+        isLockShowing = true   // set first, so the overlay's "shown" event is logged
         lockedBrowser = browser
         let card = LockCardView(
             title: active.commitment.title,
@@ -508,7 +565,7 @@ final class SessionCoordinator {
             onBackToTask: { [weak self] in self?.backToTask() },
             onBreak: { [weak self] reason in self?.finishSession(outcome: .brokeEarly, breakReason: reason) }
         )
-        overlay.show(card)
+        overlay.show(card, trigger: cause)
     }
 
     /// Hides the apps you strayed into and takes you back to the task:
@@ -517,7 +574,7 @@ final class SessionCoordinator {
     /// - otherwise bring the task's first app forward (and, if that's a
     ///   browser, onto an allowed tab).
     private func backToTask() {
-        overlay.hide()
+        overlay.hide(reason: "back to task")
         isLockShowing = false
         strayApps.forEach { $0.hide() }
         strayApps.removeAll()
@@ -555,8 +612,8 @@ final class SessionCoordinator {
         let parked = parkingLot.model.text.trimmingCharacters(in: .whitespacesAndNewlines)
         active.session.parkedNotes = parked.isEmpty ? nil : parked
 
+        overlay.hide(reason: outcome == .brokeEarly ? "broke early" : "session ended")
         stopLock()
-        overlay.hide()
         noise.stop()
         if AppSettings.focusEnabled {
             runShortcut(AppSettings.focusOffShortcut, turningOn: false, for: active.commitment, isTest: active.isTest)
