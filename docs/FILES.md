@@ -44,6 +44,7 @@ Scheduler (every 30 s) ──▶ SessionCoordinator ──▶ AppState (data) �
 | `MainWindowController.swift` | Opens the JouleAI window (gear icon) and remembers which tab and commitment are selected. |
 | `EndOfSessionWindowController.swift` | Shows the small end-of-session window as a floating panel that can take typing even when another app is in front. Closing it counts as Skip. |
 | `ParkingLotController.swift` | Shows, hides and docks the parking-lot pad: a floating panel one level above the lock, which takes typing without making JouleAI the front app. |
+| `CalendarReport.swift` | Diagnostic: `--calendar-report <file>` writes every calendar account and each event from yesterday to tomorrow, with its URL, location, notes and any meeting link found. Changes nothing. |
 | `SnapshotRenderer.swift` | Renders every screen with sample data to PNGs in light and dark mode, for design review. Changes nothing. |
 
 ## `Models/`: the shapes of the data

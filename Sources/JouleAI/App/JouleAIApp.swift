@@ -19,6 +19,12 @@ struct JouleAIApp: App {
         LegacyMigration.run()            // bring over data and settings from the old "Reckon" name
         AppSettings.registerDefaults()   // fill in default settings before anything reads them
 
+        // `--calendar-report <file>`: write what the calendar shows JouleAI, and quit.
+        if let path = CalendarReport.requestedPath {
+            CalendarReport.write(to: path)
+            exit(0)
+        }
+
         // `--snapshots <folder>`: render the screens to images and quit (design review).
         if let folder = SnapshotRenderer.requestedDirectory {
             SnapshotRenderer.renderAll(to: folder)
