@@ -28,7 +28,7 @@ final class OverlayController {
 
     /// What happened, for the event log: shown from hidden, re-asserted while
     /// already visible, or hidden. `trigger` is what caused it (e.g. a bundle ID).
-    enum Change { case shown, reasserted, hidden }
+    enum Change { case shown, reasserted, hidden, recovered }
     var onChange: ((Change, String?) -> Void)?
 
     private let content = OverlayContent()
@@ -39,9 +39,8 @@ final class OverlayController {
     private var keyScreenID: CGDirectDisplayID?
 
     private(set) var isVisible = false
-    /// True if macOS says the card's panel can actually be seen right now.
-    /// (`isVisible` only means we asked for it to be shown.)
-    var isOnScreen: Bool { keyPanel?.occlusionState.contains(.visible) ?? false }
+    /// When the panels were last rebuilt because they weren't on screen.
+    private var lastRecovery = Date.distantPast
     /// The presentation options in force before we hid the Dock / blocked Cmd+Tab.
     private var savedPresentationOptions: NSApplication.PresentationOptions?
 
@@ -118,6 +117,30 @@ final class OverlayController {
             NSApp.presentationOptions = []
         }
         if wasVisible { onChange?(.hidden, reason) }
+    }
+
+    /// Runs every second. `isVisible` only means we asked for the overlay, and
+    /// macOS can keep a panel off the screen you're looking at, so ask macOS what
+    /// is really on screen. If the panel isn't, replace the panels with new ones.
+    /// Tried at most every 5 seconds, and not while the Mac's screen is locked.
+    func keepOnScreen() {
+        guard isVisible, let keyPanel, !Self.isScreenLocked,
+              Date().timeIntervalSince(lastRecovery) >= 5 else { return }
+        let onScreen = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        guard !onScreen.contains(where: { $0[kCGWindowNumber as String] as? Int == keyPanel.windowNumber }) else { return }
+
+        lastRecovery = Date()
+        panels.values.forEach { $0.orderOut(nil) }
+        panels.removeAll()
+        ensurePanels()
+        for panel in panels.values { panel.orderFrontRegardless() }
+        bringForward()
+        onChange?(.recovered, nil)
+    }
+
+    private static var isScreenLocked: Bool {
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return session?["CGSSessionScreenIsLocked"] as? Bool ?? false
     }
 
     /// Makes the card's panel the window that receives key presses.

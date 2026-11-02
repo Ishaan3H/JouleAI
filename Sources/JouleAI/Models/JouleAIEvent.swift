@@ -15,7 +15,8 @@ struct JouleAIEvent: Codable {
         case respondedNotToday   // "Not today"
         case reminderShown       // 5-minute reminder appeared
         case overlayShown        // full-screen Start card appeared
-        case startCardHidden     // Start card was up but not visible on screen
+        case startCardHidden     // Start card wasn't on screen, so its panels were replaced
+        case sessionAllowlist    // what this session allows, written at Start
         case rescheduled         // moved 30 minutes later
         case cancelled           // "Not today" or Cancel on the overlay
         case started             // Start pressed
@@ -31,6 +32,7 @@ struct JouleAIEvent: Codable {
         case lockShown           // (older logs) the lock card appeared; now lockOverlayShown
         case lockOverlayShown       // lock overlay appeared from hidden; detail = what caused it (app bundle ID, tab host, or blocked browser)
         case lockOverlayReasserted  // already up, brought back to front after an app switch; detail = the bundle ID
+        case lockOverlayRecovered   // lock overlay wasn't on screen, so its panels were replaced
         case lockOverlayHidden      // taken down; detail = why (back to task, session ended, broke early)
         case emergencyExit          // ⌃⌥⌘⎋ pressed: overlay removed, session ended as broke early
         case caffeinateOn           // power assertion taken: the Mac won't idle-sleep during the session

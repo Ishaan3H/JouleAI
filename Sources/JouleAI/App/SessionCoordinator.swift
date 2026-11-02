@@ -74,8 +74,6 @@ final class SessionCoordinator {
     @ObservationIgnored private var emergencyHotKey: GlobalHotKey?
     /// ⌘⇧J, registered only while a session runs.
     @ObservationIgnored private var parkingLotHotKey: GlobalHotKey?
-    /// True once this Start card has been logged as not visible.
-    @ObservationIgnored private var loggedHiddenStartCard = false
     /// Waits a moment after typing stops before saving the parking lot.
     @ObservationIgnored private var parkedSaveTask: Task<Void, Never>?
     @ObservationIgnored private let notifier = Notifier()
@@ -155,7 +153,6 @@ final class SessionCoordinator {
         appState.refresh()
         sendLeadUpNotifications()
         closeExpiredStartCard()
-        keepStartCardOnScreen()
         checkForDueCommitment()
         updateUpcoming()
     }
@@ -303,17 +300,6 @@ final class SessionCoordinator {
         closeStartCard()
     }
 
-    /// The Start card should be up but macOS says it can't be seen: log it once
-    /// and bring it back.
-    private func keepStartCardOnScreen() {
-        guard let firing = firingCommitment, !overlay.isOnScreen else { return }
-        if !loggedHiddenStartCard {
-            loggedHiddenStartCard = true
-            EventLog.record(.startCardHidden, firing, isTest: appState.commitment(withID: firing.id) == nil)
-        }
-        overlay.reassert(trigger: nil)
-    }
-
     /// "Start" in the popover: the same as pressing Start on the Start card.
     func startFiring(_ id: Commitment.ID) {
         guard let firing = firingCommitment, firing.id == id else { return }
@@ -322,7 +308,6 @@ final class SessionCoordinator {
 
     private func fire(_ commitment: Commitment, isTest: Bool, noteOverride: String? = nil) {
         firingCommitment = commitment
-        loggedHiddenStartCard = false
         updateUpcoming()
         audio.mute()
         EventLog.record(.overlayShown, commitment, isTest: isTest)
@@ -396,6 +381,9 @@ final class SessionCoordinator {
             isTest: isTest
         )
         tabCheckPausedUntil = now.addingTimeInterval(5)
+        if let allowlist = activeSession?.allowlist {
+            EventLog.record(.sessionAllowlist, commitment, detail: allowlist.summary, isTest: isTest)
+        }
 
         // A meeting link from the calendar event opens along with the other targets.
         var targets = commitment.launchTargets
@@ -453,6 +441,7 @@ final class SessionCoordinator {
 
     /// Every second: update the session's time left, and the time until the next one.
     private func clockTick() {
+        overlay.keepOnScreen()
         updateRemaining()
         updateUpcoming()
     }
@@ -526,12 +515,17 @@ final class SessionCoordinator {
     /// Writes the lock overlay's shown / reasserted / hidden events, with what
     /// triggered them, so it's easy to confirm it fires once per switch.
     private func logOverlay(_ change: OverlayController.Change, trigger: String?) {
+        if change == .recovered, let firing = firingCommitment {
+            EventLog.record(.startCardHidden, firing, isTest: appState.commitment(withID: firing.id) == nil)
+            return
+        }
         guard isLockShowing, let active = activeSession else { return }
         let kind: JouleAIEvent.Kind
         switch change {
         case .shown: kind = .lockOverlayShown
         case .reasserted: kind = .lockOverlayReasserted
         case .hidden: kind = .lockOverlayHidden
+        case .recovered: kind = .lockOverlayRecovered
         }
         EventLog.record(kind, active.commitment, detail: trigger, isTest: active.isTest)
     }

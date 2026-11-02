@@ -56,6 +56,16 @@ struct SessionAllowlist {
                 targetSites.append(link)
             }
         }
+
+        // However short the list, an app that isn't on it must never be allowed.
+        assert(!allowsApp("com.jouleai.not-on-any-allowlist"), "the allowlist allowed an unknown app")
+    }
+
+    /// What this session allows, for the event log.
+    var summary: String {
+        let sites = targetSites.compactMap(\.host) + siteRules.map(\.value)
+        return "apps: \(apps.isEmpty ? "none" : apps.joined(separator: ", ")); "
+            + "sites: \(sites.isEmpty ? "none" : sites.joined(separator: ", "))"
     }
 
     // MARK: - The two questions
