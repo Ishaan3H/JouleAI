@@ -22,7 +22,10 @@ struct MainWindowView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 780, height: 580)
+        // A fixed size normally; the whole screen when full screen.
+        .frame(width: model.isFullScreen ? nil : 780, height: model.isFullScreen ? nil : 580)
+        .frame(maxWidth: model.isFullScreen ? .infinity : nil,
+               maxHeight: model.isFullScreen ? .infinity : nil)
         .background(Theme.background)
         .ignoresSafeArea()   // draw under the transparent title bar too
     }
